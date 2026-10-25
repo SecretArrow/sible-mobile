@@ -2,7 +2,10 @@
 library;
 
 class SibleApi {
-  static const String baseUrl = 'https://prod.sible.network';
+  /// Full REST base. The Expo app builds `${apiUrl}/api/v1` internally
+  /// (see bundle: `s = \`${n.apiUrl}/api/v1\``), so all request paths below
+  /// are appended to this base.
+  static const String baseUrl = 'https://prod.sible.network/api/v1';
   static const String appVersion = '1.2.0';
   static const int appBuild = 20;
 }

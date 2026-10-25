@@ -178,13 +178,20 @@ class SibleApiClient {
     final uri = Uri.parse('${SibleApi.baseUrl}$path');
     final req = await _http.openUrl(method, uri);
     _baseHeaders().forEach(req.headers.set);
-    if (body != null) {
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      req.write(jsonEncode(body));
-    }
+    // Auth header must be set BEFORE the body is added - once req.add() is
+    // called the header block freezes ("HTTP headers are not mutable").
     if (auth && tokens?.accessToken != null) {
       req.headers.set(
           HttpHeaders.authorizationHeader, 'Bearer ${tokens!.accessToken}');
+    }
+    // IMPORTANT: send the body with an explicit Content-Length instead of
+    // req.write() (chunked transfer-encoding). Some backends (mail.tm in
+    // particular) fail with 504 on chunked request bodies.
+    if (body != null) {
+      final payload = utf8.encode(jsonEncode(body));
+      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      req.headers.contentLength = payload.length;
+      req.add(payload);
     }
     try {
       final res = await req.close().timeout(timeout);
@@ -229,9 +236,10 @@ class SibleApiClient {
   // -- Auth -----------------------------------------------------------------
 
   Future<AuthTokens> login(String email, String password) async {
+    // The API expects `identifier` (email OR username), not `email`.
     final data = await request('/auth/login',
         method: 'POST',
-        body: {'email': email, 'password': password},
+        body: {'identifier': email, 'password': password},
         auth: false);
     final t = AuthTokens.fromData(data);
     if (t == null) {
@@ -266,6 +274,23 @@ class SibleApiClient {
           method: 'POST',
           body: {'email': email, 'code': code, 'purpose': purpose},
           auth: false);
+
+  /// Verifies an OTP and captures the returned session tokens.
+  ///
+  /// The API returns `{accessToken, refreshToken, user}` directly from
+  /// /auth/verify-otp (both for purpose 'verify_email' and 'login'), so no
+  /// separate /auth/login call is needed after verification.
+  Future<AuthTokens> verifyOtpForTokens(String email, String code,
+      {String purpose = 'verify_email'}) async {
+    final data = await verifyOtp(email, code, purpose: purpose);
+    final t = AuthTokens.fromData(data);
+    if (t == null) {
+      throw SibleApiException(
+          'NO_TOKENS', 'OTP verified but no tokens returned');
+    }
+    tokens = t;
+    return t;
+  }
 
   Future<void> resendOtp(String email, {String purpose = 'verify_email'}) =>
       request('/auth/resend-otp',

@@ -59,6 +59,15 @@ badline
   });
 
   group('MailTmService.extractOtp', () {
+    test('randomPassword always has a letter and a number', () {
+      for (var i = 0; i < 300; i++) {
+        final p = MailTmService.randomPassword();
+        expect(p.contains(RegExp('[A-Za-z]')), isTrue, reason: p);
+        expect(p.contains(RegExp('[0-9]')), isTrue, reason: p);
+        expect(p.length, greaterThanOrEqualTo(8), reason: p);
+      }
+    });
+
     test('finds plain 6-digit code', () {
       expect(
         MailTmService.extractOtp(

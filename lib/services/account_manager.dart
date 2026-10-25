@@ -239,6 +239,13 @@ class AccountManager extends ChangeNotifier {
         onProgress?.call(slot, 'registering', ok: true);
         final client = clientFor(acc, null);
         final username = 'mn${randomToken(length: 8)}';
+        // Snapshot mailbox state before triggering actions so we never pick
+        // up a stale code (mail.tm deliveries can race within seconds).
+        var knownMailIds = <String>{};
+        try {
+          knownMailIds =
+              (await mail.messages(box.token)).map((m) => '${m['id']}').toSet();
+        } catch (_) {}
         try {
           await client.register(
             email: box.address,
@@ -255,16 +262,40 @@ class AccountManager extends ChangeNotifier {
         onProgress?.call(slot, 'waiting OTP', ok: true);
         String code;
         try {
-          code = await mail.waitForOtp(box);
+          code = await mail.waitForOtp(box, skipIds: knownMailIds);
         } on MailTmException {
           await client.resendOtp(box.address);
-          code = await mail.waitForOtp(box);
+          code = await mail.waitForOtp(box, skipIds: knownMailIds);
         }
         onProgress?.call(slot, 'verifying OTP', ok: true);
+        var verifiedWithTokens = false;
         try {
-          await client.verifyOtp(box.address, code, purpose: 'verify_email');
+          // /auth/verify-otp returns the session tokens directly - capture
+          // them instead of calling /auth/login (which would trigger a
+          // fresh needsOtp challenge for every fresh account).
+          await client.verifyOtpForTokens(box.address, code,
+              purpose: 'verify_email');
+          verifiedWithTokens = true;
+          final secretsNow = await store.readSecrets(acc.id);
+          if (secretsNow != null) {
+            secretsNow
+              ..accessToken = client.tokens?.accessToken
+              ..refreshToken = client.tokens?.refreshToken;
+            await store.writeSecrets(acc.id, secretsNow);
+          }
+          acc
+            ..status = AccountStatus.idle
+            ..lastError = null;
+          await saveAccount(acc);
         } on SibleApiException catch (e) {
           _logFor(acc, LogLevel.warn, 'auth', 'verify: ${e.code} ${e.message}');
+        }
+
+        if (verifiedWithTokens) {
+          _logFor(acc, LogLevel.success, 'auth', 'mail.tm account ready');
+          created++;
+          await Future<void>.delayed(jitter(baseMs: 1200, spreadMs: 1800));
+          continue;
         }
 
         onProgress?.call(slot, 'logging in', ok: true);
@@ -485,11 +516,23 @@ class AccountManager extends ChangeNotifier {
               address: a.email,
               password: a.mailPassword ?? '',
               token: a.mailToken!);
-          final code =
-              await mail.waitForOtp(box, timeout: const Duration(seconds: 70));
+          // Only accept a code from an email that arrived from now on -
+          // the mailbox may still hold the older sign-up code.
+          final knownMailIds =
+              (await mail.messages(box.token)).map((m) => '${m['id']}').toSet();
+          final code = await mail.waitForOtp(box,
+              timeout: const Duration(seconds: 70), skipIds: knownMailIds);
           final client = _clients['${a.id}|${a.proxyKey ?? 'direct'}'];
           if (client != null) {
-            await client.verifyOtp(a.email, code, purpose: 'login');
+            final t = await client.verifyOtpForTokens(a.email, code,
+                purpose: 'login');
+            final secretsNow = await store.readSecrets(a.id);
+            if (secretsNow != null) {
+              secretsNow
+                ..accessToken = t.accessToken
+                ..refreshToken = t.refreshToken;
+              await store.writeSecrets(a.id, secretsNow);
+            }
             a.status = AccountStatus.idle;
             _logFor(a, LogLevel.success, 'auth', 'OTP auto-verified');
           }
