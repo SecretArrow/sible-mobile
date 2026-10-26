@@ -6,6 +6,8 @@
 /// (flutter_secure_storage / shared_preferences); its pure client-side search
 /// lives in `ModelPage.search` and is exercised below via the same code path
 /// (`InferHubService.searchModels` delegates 1:1 to `ModelPage.search`).
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sible_mobile/models/inferhub_models.dart';
 

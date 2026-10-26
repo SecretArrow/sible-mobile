@@ -20,7 +20,6 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -274,7 +273,7 @@ class BackupService {
       final accounts = await exportAll();
       final bytes = encryptEnvelope(buildEnvelopeJson(accounts), password);
       final now = DateTime.now();
-      final p2 = (int v) => v.toString().padLeft(2, '0');
+      p2(int v) => v.toString().padLeft(2, '0');
       final name =
           'sible-backup-${now.year}${p2(now.month)}${p2(now.day)}.siblebak';
 

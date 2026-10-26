@@ -166,7 +166,7 @@ class _AccountChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected = state.accountFilter;
     final active = selected != null && selected.isNotEmpty;
-    final label = active ? selected! : t(context, 'common.all');
+    final label = active ? selected : t(context, 'common.all');
     return PopupMenuButton<String>(
       initialValue: active ? selected : null,
       onSelected: (v) => state.setAccountFilter(v.isEmpty ? null : v),

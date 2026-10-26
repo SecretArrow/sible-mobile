@@ -9,7 +9,6 @@
 ///   persisted by the app shell; `I18nScope` publishes it down the tree.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../i18n/inferhub_strings.dart';

@@ -186,7 +186,7 @@ void main() {
 
   const min = 60000;
 
-  NotificationDecision _decide({
+  NotificationDecision decide({
     bool errorOnly = false,
     int cooldownMinutes = 30,
     required String kind,
@@ -209,7 +209,7 @@ void main() {
 
   group('decide (error-only)', () {
     test('blocks cycle_ok when errorOnly is on', () {
-      final d = _decide(errorOnly: true, kind: 'cycle_ok', nowMillis: 1000);
+      final d = decide(errorOnly: true, kind: 'cycle_ok', nowMillis: 1000);
       expect(d.notify, isFalse);
       expect(d.reason, 'errorOnly');
     });
@@ -232,21 +232,21 @@ void main() {
     });
 
     test('claims pass even with errorOnly on', () {
-      final d1 = _decide(
+      final d1 = decide(
           errorOnly: true,
           kind: 'claim',
           last: {'claim|a1': 1000},
           nowMillis: 1000 + 5 * min);
       expect(d1.notify, isTrue);
       expect(d1.reason, 'claim');
-      final d2 = _decide(
+      final d2 = decide(
           errorOnly: true, kind: 'cycle_ok', isClaim: true, nowMillis: 1000);
       expect(d2.notify, isTrue);
       expect(d2.reason, 'claim');
     });
 
     test('errors always pass (bypass errorOnly too)', () {
-      final d = _decide(errorOnly: true, kind: 'cycle_error', nowMillis: 1000);
+      final d = decide(errorOnly: true, kind: 'cycle_error', nowMillis: 1000);
       expect(d.notify, isTrue);
       expect(d.reason, 'error');
     });
@@ -331,9 +331,9 @@ void main() {
 
     test('alerts respect the per-key cooldown', () {
       final last = <String, int>{};
-      final a1 = _decide(kind: 'alert', last: last, nowMillis: 0);
-      final a2 = _decide(kind: 'alert', last: last, nowMillis: 10 * min);
-      final a3 = _decide(kind: 'alert', last: last, nowMillis: 31 * min);
+      final a1 = decide(kind: 'alert', last: last, nowMillis: 0);
+      final a2 = decide(kind: 'alert', last: last, nowMillis: 10 * min);
+      final a3 = decide(kind: 'alert', last: last, nowMillis: 31 * min);
       expect(a1.notify, isTrue);
       expect(a2.notify, isFalse);
       expect(a2.reason, 'cooldown');
@@ -343,7 +343,7 @@ void main() {
     test('cooldown keys are per kind + account', () {
       final last = {'alert|a1': 0};
       final d =
-          _decide(kind: 'alert', accountId: 'a2', last: last, nowMillis: 1000);
+          decide(kind: 'alert', accountId: 'a2', last: last, nowMillis: 1000);
       expect(d.notify, isTrue);
     });
 
@@ -364,7 +364,7 @@ void main() {
     });
 
     test('unknown kinds are blocked', () {
-      final d = _decide(kind: 'weird', nowMillis: 0);
+      final d = decide(kind: 'weird', nowMillis: 0);
       expect(d.notify, isFalse);
       expect(d.reason, 'unknownKind');
     });
