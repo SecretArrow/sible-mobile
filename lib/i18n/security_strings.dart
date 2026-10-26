@@ -88,4 +88,12 @@ const Map<String, Map<String, String>> securityStrings = {
     'en': 'Enroll a fingerprint/face in Android settings first.',
     'id': 'Daftarkan sidik jari/wajah di pengaturan Android dulu.',
   },
+  'lock.availableNote': {
+    'en': 'Fingerprint / face / device credential is ready.',
+    'id': 'Sidik jari / wajah / kredensial perangkat siap.',
+  },
+  'lock.setupFailed': {
+    'en': 'Could not verify — app lock stays off.',
+    'id': 'Tidak bisa verifikasi — kunci aplikasi tetap nonaktif.',
+  },
 };
