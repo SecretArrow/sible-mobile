@@ -164,8 +164,7 @@ class ProxyEngine {
         final req = await client.getUrl(src.url);
         final res = await req.close().timeout(timeout);
         // Body read is bounded - a stalled source must not hang the refresh.
-        final body =
-            await res.transform(utf8.decoder).join().timeout(timeout);
+        final body = await res.transform(utf8.decoder).join().timeout(timeout);
         final parsed = src.geonodeFormat
             ? ProxyEntry.parseGeonode(body)
             : ProxyEntry.parseRawList(body);

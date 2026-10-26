@@ -78,6 +78,7 @@ class AccountManager extends ChangeNotifier {
   /// Releases every network resource owned by this manager. Used by the
   /// background service between cycles to avoid fd exhaustion over long
   /// shifts. NEVER call this on the long-lived UI manager.
+  @override
   Future<void> dispose() async {
     for (final c in _clients.values) {
       try {

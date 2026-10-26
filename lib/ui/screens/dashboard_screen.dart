@@ -302,8 +302,9 @@ class ServicePill extends StatelessWidget {
           await settings.setServiceEnabled(!newValue); // revert UI state
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(
-                  'Gagal ${newValue ? 'menyalakan' : 'mematikan'} service: $e')),
+              SnackBar(
+                  content: Text(
+                      'Gagal ${newValue ? 'menyalakan' : 'mematikan'} service: $e')),
             );
           }
         }

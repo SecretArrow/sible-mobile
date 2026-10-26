@@ -277,7 +277,8 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Gagal release proxy: $e')),
+                              SnackBar(
+                                  content: Text('Gagal release proxy: $e')),
                             );
                           }
                         }
@@ -315,8 +316,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                          content:
-                                              Text('Cycle gagal: $e')),
+                                          content: Text('Cycle gagal: $e')),
                                     );
                                   }
                                 } finally {

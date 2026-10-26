@@ -40,8 +40,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _referral = TextEditingController(
-        text: context.read<SettingsStore>().referralCode);
+    _referral =
+        TextEditingController(text: context.read<SettingsStore>().referralCode);
   }
 
   @override
@@ -60,8 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content:
-                Text(label != null ? '$label gagal: $e' : 'Error: $e')),
+            content: Text(label != null ? '$label gagal: $e' : 'Error: $e')),
       );
       return false;
     }
@@ -166,9 +165,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: _t('Cycle summary'),
                 subtitle: _s('One aggregated notification per cycle'),
                 value: settings.notifyCycleSummary,
-                onChanged: (v) =>
-                    _guard(() => settings.setNotifyCycleSummary(v),
-                        label: 'Notifikasi'),
+                onChanged: (v) => _guard(
+                    () => settings.setNotifyCycleSummary(v),
+                    label: 'Notifikasi'),
               ),
               SwitchListTile(
                 title: _t('Alerts'),
@@ -184,8 +183,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: _s('Required on Android 13+'),
                 trailing: OutlinedButton(
                   onPressed: () => _guard(() async {
-                    final granted = await NotificationService.instance
-                        .requestPermission();
+                    final granted =
+                        await NotificationService.instance.requestPermission();
                     await Permission.notification.request();
                     _toast(granted
                         ? 'Notifikasi diizinkan'
@@ -222,12 +221,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               SwitchListTile(
                 title: _t('Direct fallback'),
-                subtitle: _s(
-                    'Use the device IP when no healthy proxy is available'),
+                subtitle:
+                    _s('Use the device IP when no healthy proxy is available'),
                 value: settings.allowDirectFallback,
-                onChanged: (v) =>
-                    _guard(() => settings.setAllowDirectFallback(v),
-                        label: 'Direct fallback'),
+                onChanged: (v) => _guard(
+                    () => settings.setAllowDirectFallback(v),
+                    label: 'Direct fallback'),
               ),
               ListTile(
                 title: _t('Pool target'),
