@@ -41,4 +41,17 @@ const Map<String, Map<String, String>> statsStrings = {
     'en': 'Top accounts',
     'id': 'Akun teratas',
   },
+  'stats.allAccounts': {
+    'en': 'All accounts',
+    'id': 'Semua akun',
+  },
+  'stats.earnedPerDay': {
+    'en': 'Earned per day',
+    'id': 'Diperoleh per hari',
+  },
+  'stats.claims': {'en': 'claims', 'id': 'klaim'},
+  'stats.noDataHint': {
+    'en': 'Earnings appear here after the first successful claim.',
+    'id': 'Penghasilan muncul di sini setelah klaim pertama berhasil.',
+  },
 };
