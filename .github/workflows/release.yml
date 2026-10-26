@@ -37,6 +37,16 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties', 'pubspec.lock') }}
           restore-keys: gradle-${{ runner.os }}-
       - run: flutter pub get
+      - name: Setup signing keystore (from GitHub Secrets)
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PW: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PW: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > android/app/release-key.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release-key.jks\n' \
+            "$STORE_PW" "$KEY_PW" "$KEY_ALIAS" > android/key.properties
       - name: Build split-per-ABI APKs
         run: flutter build apk --release --split-per-abi
       - name: Publish GitHub Release
