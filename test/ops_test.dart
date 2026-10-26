@@ -174,7 +174,7 @@ void main() {
       expect(lines, hasLength(4));
       expect(lines[0], 'at,account,level,message');
       expect(lines[1], 't1,Miner 1,info,ok');
-      expect(lines[2], 't2,Miner 2,error,"a,""b"');
+      expect(lines[2], 't2,Miner 2,error,"a,""b""');
       expect(lines[3], 'c"');
       expect(csv.endsWith('c"'), isTrue);
     });
