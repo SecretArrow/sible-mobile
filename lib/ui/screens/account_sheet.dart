@@ -203,8 +203,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                 GlowCard(
                   margin: EdgeInsets.zero,
                   child: ListTile(
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 14),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14),
                     leading: const Icon(Icons.verified_user_outlined,
                         color: SibleTheme.success),
                     title: Text(
@@ -544,8 +543,7 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
             TextField(
               controller: _email,
               keyboardType: TextInputType.emailAddress,
-              decoration:
-                  const InputDecoration(hintText: 'you@gmail.com'),
+              decoration: const InputDecoration(hintText: 'you@gmail.com'),
             ),
             const SizedBox(height: 10),
             TextField(
@@ -557,16 +555,15 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
             const SizedBox(height: 10),
             TextField(
               controller: _label,
-              decoration: InputDecoration(
-                  hintText: t(context, 'account.add.label')),
+              decoration:
+                  InputDecoration(hintText: t(context, 'account.add.label')),
             ),
             const SizedBox(height: 18),
             GradientButton(
               label: t(context, 'account.add.cta'),
               icon: Icons.login,
               busy: _busy,
-              onPressed:
-                  roomLeft <= 0 ? null : () => _submit(mgr),
+              onPressed: roomLeft <= 0 ? null : () => _submit(mgr),
             ),
             if (roomLeft <= 0)
               Padding(
@@ -574,8 +571,8 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
                 child: Text(
                   t(context, 'account.add.limitReached'),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: SibleTheme.warning, fontSize: 12),
+                  style:
+                      const TextStyle(color: SibleTheme.warning, fontSize: 12),
                 ),
               ),
           ],
@@ -731,8 +728,8 @@ class _OtpCardState extends State<_OtpCard> {
               const SizedBox(width: 10),
               FilledButton(
                 onPressed: _busy ? null : _verify,
-                style: FilledButton.styleFrom(
-                    backgroundColor: SibleTheme.warning),
+                style:
+                    FilledButton.styleFrom(backgroundColor: SibleTheme.warning),
                 child: _busy
                     ? const SizedBox(
                         width: 14,

@@ -43,7 +43,10 @@ const Map<String, Map<String, String>> accountStrings = {
   },
 
   // -- Manual OTP ------------------------------------------------------------
-  'account.otp.title': {'en': 'Enter verification code', 'id': 'Masukkan kode verifikasi'},
+  'account.otp.title': {
+    'en': 'Enter verification code',
+    'id': 'Masukkan kode verifikasi'
+  },
   'account.otp.subtitle': {
     'en': 'A 6-digit code was sent to this email. Open your Gmail inbox, '
         'copy the code, then paste it here.',
@@ -113,7 +116,10 @@ const Map<String, Map<String, String>> accountStrings = {
         'membukanya.\nOpsi: daftarkan akun baru, atau hapus akun ini dari '
         'daftar.',
   },
-  'fix.generic.title': {'en': 'Something went wrong', 'id': 'Terjadi kesalahan'},
+  'fix.generic.title': {
+    'en': 'Something went wrong',
+    'id': 'Terjadi kesalahan'
+  },
   'fix.generic.steps': {
     'en': 'An unexpected error occurred on the last run.\n'
         '1. Retry the account cycle\n'
