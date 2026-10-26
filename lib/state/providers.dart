@@ -29,6 +29,10 @@ class SettingsStore extends ChangeNotifier {
   int get cycleConcurrency => prefs.getInt('settings.cycleConcurrency') ?? 6;
   String get referralCode => prefs.getString('settings.referralCode') ?? '';
 
+  /// KEEPALIVE: refresh auth tokens every 10 minutes so sessions never expire.
+  bool get keepaliveEnabled =>
+      prefs.getBool('settings.keepaliveEnabled') ?? true;
+
   Future<void> setServiceEnabled(bool v) async {
     await prefs.setBool('settings.serviceEnabled', v);
     notifyListeners();
@@ -71,6 +75,11 @@ class SettingsStore extends ChangeNotifier {
 
   Future<void> setReferralCode(String v) async {
     await prefs.setString('settings.referralCode', v);
+    notifyListeners();
+  }
+
+  Future<void> setKeepaliveEnabled(bool v) async {
+    await prefs.setBool('settings.keepaliveEnabled', v);
     notifyListeners();
   }
 }

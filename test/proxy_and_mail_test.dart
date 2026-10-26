@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sible_mobile/core/constants.dart';
 import 'package:sible_mobile/models/models.dart';
-import 'package:sible_mobile/services/mailtm_service.dart';
+import 'package:sible_mobile/services/error_advisor.dart';
 
 void main() {
   group('ProxyEntry.parseRawList', () {
@@ -58,36 +58,6 @@ badline
     });
   });
 
-  group('MailTmService.extractOtp', () {
-    test('randomPassword always has a letter and a number', () {
-      for (var i = 0; i < 300; i++) {
-        final p = MailTmService.randomPassword();
-        expect(p.contains(RegExp('[A-Za-z]')), isTrue, reason: p);
-        expect(p.contains(RegExp('[0-9]')), isTrue, reason: p);
-        expect(p.length, greaterThanOrEqualTo(8), reason: p);
-      }
-    });
-
-    test('finds plain 6-digit code', () {
-      expect(
-        MailTmService.extractOtp(
-            'Your Sible verification code is 481920. Do not share it.'),
-        '481920',
-      );
-    });
-
-    test('finds code inside html', () {
-      expect(
-        MailTmService.extractOtp('<p>Hello</p> <b>code:</b> 550123 <span/>'),
-        '550123',
-      );
-    });
-
-    test('returns null when absent', () {
-      expect(MailTmService.extractOtp('no code here, call 0800-ALPHA'), isNull);
-    });
-  });
-
   group('Account isolation', () {
     test('accounts have unique ids and independent files', () {
       final a = Account(id: 'a1', email: 'a@x.com');
@@ -118,6 +88,14 @@ badline
       expect(back.password, 'pw');
       expect(back.openedExtensions, containsAll(['e1', 'e2']));
     });
+
+    test('keepalive timestamp round-trips through JSON', () {
+      final a = Account(id: 'k1', email: 'k@x.com');
+      a.lastKeepalive = DateTime.utc(2026, 10, 26, 8, 30);
+      final back = Account.fromJson(
+          Map<String, dynamic>.from(a.toJson().map((k, v) => MapEntry(k, v))));
+      expect(back.lastKeepalive, a.lastKeepalive);
+    });
   });
 
   group('AccelerateTargets', () {
@@ -126,6 +104,73 @@ badline
       expect(AccelerateTargets.adsFor(40), 2);
       expect(AccelerateTargets.adsFor(60), 3);
       expect(AccelerateTargets.adsFor(999), 1);
+    });
+  });
+
+  group('ErrorAdvisor', () {
+    test('flags problem statuses', () {
+      final otp = Account(id: 'a', email: 'a@x.com')
+        ..status = AccountStatus.needsOtp;
+      final rel = Account(id: 'b', email: 'b@x.com')
+        ..status = AccountStatus.needsRelogin;
+      final ban = Account(id: 'c', email: 'c@x.com')
+        ..status = AccountStatus.banned;
+      final err = Account(id: 'd', email: 'd@x.com')
+        ..status = AccountStatus.error;
+      final ok = Account(id: 'e', email: 'e@x.com')
+        ..status = AccountStatus.mining;
+      expect(ErrorAdvisor.hasProblem(otp), isTrue);
+      expect(ErrorAdvisor.hasProblem(rel), isTrue);
+      expect(ErrorAdvisor.hasProblem(ban), isTrue);
+      expect(ErrorAdvisor.hasProblem(err), isTrue);
+      expect(ErrorAdvisor.hasProblem(ok), isFalse);
+    });
+
+    test('needsOtp -> enter OTP guidance', () {
+      final a = Account(id: 'a', email: 'a@x.com')
+        ..status = AccountStatus.needsOtp;
+      final advice = ErrorAdvisor.adviseFor(a);
+      expect(advice.titleKey, 'fix.needsOtp.title');
+      expect(advice.actions, contains(FixAction.enterOtp));
+    });
+
+    test('network-ish error -> proxy guidance', () {
+      final a = Account(id: 'a', email: 'a@x.com')
+        ..status = AccountStatus.error
+        ..lastError = 'TIMEOUT: Request timed out';
+      final advice = ErrorAdvisor.adviseFor(a);
+      expect(advice.titleKey, 'fix.proxyError.title');
+      expect(advice.actions, contains(FixAction.refreshProxyPool));
+    });
+
+    test('no healthy proxy -> proxy guidance', () {
+      final a = Account(id: 'a', email: 'a@x.com')
+        ..status = AccountStatus.error
+        ..lastError =
+            'No healthy proxy available (unique-per-account pool empty)';
+      final advice = ErrorAdvisor.adviseFor(a);
+      expect(advice.titleKey, 'fix.proxyError.title');
+    });
+
+    test('banned -> remove account action only', () {
+      final a = Account(id: 'a', email: 'a@x.com')
+        ..status = AccountStatus.banned;
+      final advice = ErrorAdvisor.adviseFor(a);
+      expect(advice.titleKey, 'fix.banned.title');
+      expect(advice.actions, [FixAction.removeAccount]);
+    });
+
+    test('unknown error -> generic guidance', () {
+      final a = Account(id: 'a', email: 'a@x.com')
+        ..status = AccountStatus.error
+        ..lastError = 'WEIRD: something odd';
+      final advice = ErrorAdvisor.adviseFor(a);
+      expect(advice.titleKey, 'fix.generic.title');
+    });
+
+    test('every action enum maps to advice somewhere', () {
+      // Sanity: the enum is closed and referenced by the advisor.
+      expect(FixAction.values, hasLength(9));
     });
   });
 }

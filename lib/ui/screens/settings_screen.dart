@@ -13,8 +13,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants.dart';
 import '../../core/i18n.dart';
 import '../../core/theme.dart';
+import '../../services/account_manager.dart';
 import '../../services/background_service.dart';
 import '../../services/notification_service.dart';
+// KEEPALIVE: manual "run now" hook for the 10-minute token refresher.
+import '../../services/token_keepalive.dart';
 import '../../state/providers.dart';
 
 // INFERHUB: AI brain settings card (optional InferHub integration).
@@ -34,19 +37,16 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late final TextEditingController _referral;
   bool _serviceBusy = false;
+  bool _keepaliveBusy = false;
 
   @override
   void initState() {
     super.initState();
-    _referral =
-        TextEditingController(text: context.read<SettingsStore>().referralCode);
   }
 
   @override
   void dispose() {
-    _referral.dispose();
     super.dispose();
   }
 
@@ -277,22 +277,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           _Group(
-            title: 'Account factory',
+            title: t(context, 'keepalive.group'),
             children: [
+              SwitchListTile(
+                title: _t(t(context, 'keepalive.enabled')),
+                subtitle: _s(t(context, 'keepalive.subtitle')),
+                value: settings.keepaliveEnabled,
+                onChanged: (v) => _guard(() => settings.setKeepaliveEnabled(v),
+                    label: 'Keepalive'),
+              ),
               ListTile(
-                title: _t('Default referral code'),
-                subtitle: _s('Applied to new mail.tm registrations'),
-                trailing: SizedBox(
-                  width: 140,
-                  child: TextField(
-                    controller: _referral,
-                    decoration:
-                        const InputDecoration(hintText: 'code', isDense: true),
-                    onSubmitted: (v) => _guard(
-                        () => settings.setReferralCode(v.trim()),
-                        label: 'Referral'),
-                  ),
-                ),
+                title: _t(t(context, 'keepalive.runNow')),
+                subtitle: _s(t(context, 'keepalive.runNowHint')),
+                trailing: _keepaliveBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.heart_broken, size: 20),
+                onTap: _keepaliveBusy
+                    ? null
+                    : () async {
+                        setState(() => _keepaliveBusy = true);
+                        // Capture translated strings before the async gap.
+                        final doneMsg = t(context, 'keepalive.done');
+                        try {
+                          final mgr = context.read<AccountManager>();
+                          final summary = await TokenKeepalive.run(mgr);
+                          _toast(doneMsg
+                              .replaceFirst('%d', '${summary.checked}')
+                              .replaceFirst('%f', '${summary.failed}'));
+                        } catch (e) {
+                          _toast('Keepalive error: $e');
+                        } finally {
+                          if (mounted) {
+                            setState(() => _keepaliveBusy = false);
+                          }
+                        }
+                      },
               ),
             ],
           ),

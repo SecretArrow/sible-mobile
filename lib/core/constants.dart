@@ -6,12 +6,8 @@ class SibleApi {
   /// (see bundle: `s = \`${n.apiUrl}/api/v1\``), so all request paths below
   /// are appended to this base.
   static const String baseUrl = 'https://prod.sible.network/api/v1';
-  static const String appVersion = '2.1.0';
-  static const int appBuild = 21;
-}
-
-class MailTm {
-  static const String baseUrl = 'https://api.mail.tm';
+  static const String appVersion = '2.2.0';
+  static const int appBuild = 23;
 }
 
 /// InferHub LLM inference gateway (https://inferhub.dev/docs).

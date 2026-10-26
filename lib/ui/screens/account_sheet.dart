@@ -1,18 +1,22 @@
-/// Account detail sheet + add-account sheet (manual & mail.tm auto factory).
+/// Account detail sheet + add-account sheet (manual gmail.com flow).
 library;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
+import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../services/account_manager.dart';
+import '../../services/error_advisor.dart';
 import '../../state/providers.dart';
 import '../widgets/common.dart';
 // OPS: manual per-account proxy override card.
 import 'proxy_override_card.dart';
+// FIX: error-advisor sheet + manual OTP dialog.
+import 'fix_sheet.dart';
 
 // ---------------------------------------------------------------------------
 // Account detail
@@ -175,6 +179,48 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                     ),
                   ),
                 ],
+                // FIX: guided remediation for problem accounts + inline OTP
+                // entry card so gmail.com accounts can verify in one place.
+                if (ErrorAdvisor.hasProblem(acc)) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: SibleTheme.warning,
+                      side: BorderSide(
+                          color: SibleTheme.warning.withValues(alpha: 0.5)),
+                    ),
+                    onPressed: () => showFixSheet(context, acc.id),
+                    icon: const Icon(Icons.healing_outlined, size: 18),
+                    label: Text(t(context, 'fix.title')),
+                  ),
+                ],
+                if (acc.status == AccountStatus.needsOtp) ...[
+                  const SizedBox(height: 10),
+                  _OtpCard(acc: acc),
+                ],
+                const SizedBox(height: 12),
+                // KEEPALIVE: when the session was last confirmed alive.
+                GlowCard(
+                  margin: EdgeInsets.zero,
+                  child: ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14),
+                    leading: const Icon(Icons.verified_user_outlined,
+                        color: SibleTheme.success),
+                    title: Text(
+                      t(context, 'account.detail.keepalive'),
+                      style: const TextStyle(
+                          color: SibleTheme.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${t(context, 'keepalive.lastRun')}: ${acc.lastKeepalive == null ? t(context, 'keepalive.never') : timeAgo(acc.lastKeepalive)}',
+                      style: const TextStyle(
+                          color: SibleTheme.textSecondary, fontSize: 11),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
 
                 // Per-account automation settings.
@@ -433,7 +479,7 @@ class _SwitchRow extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Add account
+// Add account (manual gmail.com flow)
 // ---------------------------------------------------------------------------
 
 class AddAccountSheet extends StatefulWidget {
@@ -443,26 +489,17 @@ class AddAccountSheet extends StatefulWidget {
   State<AddAccountSheet> createState() => _AddAccountSheetState();
 }
 
-class _AddAccountSheetState extends State<AddAccountSheet>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
-
+class _AddAccountSheetState extends State<AddAccountSheet> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _label = TextEditingController();
-  final _referral = TextEditingController();
-  final _count = TextEditingController(text: '1');
   bool _busy = false;
-  final List<(int, String, bool)> _progress = [];
 
   @override
   void dispose() {
-    _tabs.dispose();
     _email.dispose();
     _password.dispose();
     _label.dispose();
-    _referral.dispose();
-    _count.dispose();
     super.dispose();
   }
 
@@ -475,206 +512,262 @@ class _AddAccountSheetState extends State<AddAccountSheet>
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.82,
-        child: Column(
+        height: MediaQuery.of(context).size.height * 0.72,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
           children: [
-            TabBar(
-              controller: _tabs,
-              dividerColor: SibleTheme.border,
-              labelColor: SibleTheme.textPrimary,
-              unselectedLabelColor: SibleTheme.textSecondary,
-              indicatorColor: SibleTheme.primary,
-              tabs: const [
-                Tab(text: 'Manual login'),
-                Tab(text: 'mail.tm auto'),
-              ],
+            Text(
+              t(context, 'account.add.title'),
+              style: const TextStyle(
+                  color: SibleTheme.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800),
             ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabs,
-                children: [
-                  _buildManual(roomLeft),
-                  _buildMailTm(roomLeft),
-                ],
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: SibleTheme.cyan.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border:
+                    Border.all(color: SibleTheme.cyan.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                t(context, 'account.add.gmailHint'),
+                style: const TextStyle(
+                    color: SibleTheme.textSecondary,
+                    fontSize: 11.5,
+                    height: 1.5),
               ),
             ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration:
+                  const InputDecoration(hintText: 'you@gmail.com'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _password,
+              obscureText: true,
+              decoration:
+                  InputDecoration(hintText: t(context, 'account.add.password')),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _label,
+              decoration: InputDecoration(
+                  hintText: t(context, 'account.add.label')),
+            ),
+            const SizedBox(height: 18),
+            GradientButton(
+              label: t(context, 'account.add.cta'),
+              icon: Icons.login,
+              busy: _busy,
+              onPressed:
+                  roomLeft <= 0 ? null : () => _submit(mgr),
+            ),
+            if (roomLeft <= 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  t(context, 'account.add.limitReached'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: SibleTheme.warning, fontSize: 12),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildManual(int roomLeft) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        TextField(
-          controller: _email,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(hintText: 'Email'),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _password,
-          obscureText: true,
-          decoration: const InputDecoration(hintText: 'Password'),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _label,
-          decoration:
-              const InputDecoration(hintText: 'Label (optional, e.g. "Main")'),
-        ),
-        const SizedBox(height: 18),
-        GradientButton(
-          label: 'Add & verify login',
-          icon: Icons.login,
-          busy: _busy,
-          onPressed: roomLeft <= 0
-              ? null
-              : () async {
-                  final mgr = context.read<AccountManager>();
-                  if (_email.text.trim().isEmpty || _password.text.isEmpty) {
-                    _toast(context, 'Email & password are required');
-                    return;
-                  }
-                  setState(() => _busy = true);
-                  try {
-                    final acc = await mgr.addManualAccount(
-                      email: _email.text,
-                      password: _password.text,
-                      label: _label.text,
-                    );
-                    if (acc != null) {
-                      final ok = await mgr.testLogin(acc);
-                      if (!mounted) return;
-                      _toast(
-                          context,
-                          ok
-                              ? 'Login OK - account ready'
-                              : 'Login failed - check details');
-                      if (ok && Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      }
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      _toast(context, '$e');
-                    }
-                  } finally {
-                    if (mounted) setState(() => _busy = false);
-                  }
-                },
-        ),
-        if (roomLeft <= 0)
-          const Padding(
-            padding: EdgeInsets.only(top: 12),
-            child: Text(
-              'Account limit of ${Limits.maxAccounts} reached.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: SibleTheme.warning, fontSize: 12),
-            ),
-          ),
-      ],
+  Future<void> _submit(AccountManager mgr) async {
+    if (_busy) return;
+    if (_email.text.trim().isEmpty || _password.text.isEmpty) {
+      _toast(context, t(context, 'account.add.required'));
+      return;
+    }
+    setState(() => _busy = true);
+    Account? acc;
+    try {
+      acc = await mgr.addManualAccount(
+        email: _email.text,
+        password: _password.text,
+        label: _label.text,
+      );
+    } catch (e) {
+      if (mounted) _toast(context, '$e');
+    }
+    if (acc == null) {
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+    // Verify the login immediately; if the server demands an OTP challenge
+    // (common for gmail.com accounts), open the manual OTP dialog right
+    // away so the user finishes setup in one flow.
+    bool ok = false;
+    try {
+      ok = await mgr.testLogin(acc);
+    } catch (e) {
+      if (mounted) _toast(context, '$e');
+    }
+    if (!ok && mounted && acc.status == AccountStatus.needsOtp) {
+      final verified = await showOtpDialog(context, acc);
+      ok = verified;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _toast(
+      context,
+      ok
+          ? t(context, 'account.add.ok')
+          : t(context, 'account.add.savedNoVerify'),
     );
-  }
-
-  Widget _buildMailTm(int roomLeft) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: SibleTheme.cyan.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: SibleTheme.cyan.withValues(alpha: 0.3)),
-          ),
-          child: const Text(
-            'Creates disposable mail.tm mailboxes, registers on Sible, '
-            'auto-reads the verification OTP and logs in. Use for testing only.',
-            style: TextStyle(
-                color: SibleTheme.textSecondary, fontSize: 11.5, height: 1.5),
-          ),
-        ),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _count,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-              hintText: 'How many accounts? (1-10 per batch)'),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _referral,
-          decoration:
-              const InputDecoration(hintText: 'Referral code (optional)'),
-        ),
-        const SizedBox(height: 18),
-        GradientButton(
-          label: 'Auto-create accounts',
-          icon: Icons.auto_fix_high,
-          busy: _busy,
-          onPressed: roomLeft <= 0
-              ? null
-              : () async {
-                  final mgr = context.read<AccountManager>();
-                  final n = int.tryParse(_count.text) ?? 1;
-                  if (n < 1 || n > 10) {
-                    _toast(context, 'Batch size must be 1..10');
-                    return;
-                  }
-                  setState(() {
-                    _busy = true;
-                    _progress.clear();
-                  });
-                  try {
-                    final created = await mgr.createMailTmAccounts(
-                      count: n,
-                      referralCode: _referral.text.trim(),
-                      startIndex: 0,
-                      onProgress: (i, stage, {ok = true}) {
-                        if (mounted) {
-                          setState(() => _progress.add((i, stage, ok)));
-                        }
-                      },
-                    );
-                    if (mounted) {
-                      _toast(context, 'Created $created account(s)');
-                    }
-                  } catch (e) {
-                    if (mounted) _toast(context, 'Failed: $e');
-                  } finally {
-                    if (mounted) setState(() => _busy = false);
-                  }
-                },
-        ),
-        const SizedBox(height: 14),
-        ..._progress.reversed.take(20).map((p) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  Icon(
-                    p.$3 ? Icons.check_circle_outline : Icons.error_outline,
-                    size: 14,
-                    color: p.$3 ? SibleTheme.success : SibleTheme.danger,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '#${p.$1 + 1}  ${p.$2}',
-                      style: const TextStyle(
-                          color: SibleTheme.textSecondary, fontSize: 11.5),
-                    ),
-                  ),
-                ],
-              ),
-            )),
-      ],
-    );
+    if (Navigator.canPop(context)) Navigator.pop(context);
   }
 
   void _toast(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inline OTP card (account detail)
+// ---------------------------------------------------------------------------
+
+class _OtpCard extends StatefulWidget {
+  final Account acc;
+
+  const _OtpCard({required this.acc});
+
+  @override
+  State<_OtpCard> createState() => _OtpCardState();
+}
+
+class _OtpCardState extends State<_OtpCard> {
+  final _code = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verify() async {
+    final mgr = context.read<AccountManager>();
+    if (_code.text.trim().isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final ok = await mgr.verifyOtpForAccount(widget.acc, _code.text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? t(context, 'account.add.ok')
+              : t(context, 'account.otp.invalid')),
+        ),
+      );
+      if (ok) _code.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t(context, 'fix.failed')}: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SibleTheme.warning.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SibleTheme.warning.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t(context, 'account.otp.title'),
+            style: const TextStyle(
+                color: SibleTheme.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            t(context, 'account.otp.subtitle'),
+            style: const TextStyle(
+                color: SibleTheme.textSecondary, fontSize: 11.5, height: 1.5),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  style: const TextStyle(
+                      color: SibleTheme.textPrimary,
+                      letterSpacing: 6,
+                      fontWeight: FontWeight.w800),
+                  decoration: InputDecoration(
+                    hintText: t(context, 'account.otp.hint'),
+                    counterText: '',
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _verify(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: _busy ? null : _verify,
+                style: FilledButton.styleFrom(
+                    backgroundColor: SibleTheme.warning),
+                child: _busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(t(context, 'account.otp.verify')),
+              ),
+            ],
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      final mgr = context.read<AccountManager>();
+                      // Capture before the async gap (context-safety lint).
+                      final messenger = ScaffoldMessenger.of(context);
+                      final sentMsg = t(context, 'account.otp.sent');
+                      try {
+                        await mgr.resendOtpForAccount(widget.acc);
+                        messenger.showSnackBar(
+                          SnackBar(content: Text(sentMsg)),
+                        );
+                      } catch (e) {
+                        messenger.showSnackBar(
+                          SnackBar(content: Text('Resend failed: $e')),
+                        );
+                      }
+                    },
+              child: Text(t(context, 'account.otp.resend')),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

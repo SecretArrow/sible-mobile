@@ -7,7 +7,10 @@
 
     <!-- Background worker (foreground service) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- FGS type specialUse: long-running user-initiated automation worker.
+         Chosen over dataSync because Android 15 caps dataSync FGS at ~6h/day,
+         which would kill a 24/7 miner (android/skills permissions security). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
@@ -43,11 +46,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- Keep the worker alive as a dataSync foreground service -->
+        <!-- Keep the worker alive as a specialUse foreground service
+             (Android 14+ requires the type + a subtype property). -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="dataSync"
-            tools:replace="android:foregroundServiceType"/>
+            android:foregroundServiceType="specialUse"
+            tools:replace="android:foregroundServiceType">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-configured continuous mining automation worker with periodic session keepalive"/>
+        </service>
         <!-- Relaunch the app after boot so the Flutter bootstrap restarts
              the background worker (guarded by security.bootStart pref). -->
         <receiver

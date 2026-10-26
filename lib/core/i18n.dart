@@ -11,6 +11,7 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+import '../i18n/account_strings.dart';
 import '../i18n/inferhub_strings.dart';
 import '../i18n/maintenance_strings.dart';
 import '../i18n/ops_strings.dart';
@@ -91,6 +92,7 @@ const Map<String, Map<String, String>> coreStrings = {
 /// Lookup order: active lang, then English, then the raw key.
 const Map<String, Map<String, String>> kAppStrings = {
   ...coreStrings,
+  ...accountStrings,
   ...inferhubStrings,
   ...statsStrings,
   ...maintenanceStrings,

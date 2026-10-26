@@ -13,7 +13,6 @@ import '../models/models.dart';
 import 'account_store.dart';
 // INFERHUB: optional AI brain (reward-task solver + acceleration planner).
 import 'inferhub_brain.dart';
-import 'mailtm_service.dart';
 import 'mining_policy.dart';
 // OPS: smart-notification policy + manual per-account proxy override.
 import 'package:shared_preferences/shared_preferences.dart';
@@ -86,10 +85,6 @@ class AccountManager extends ChangeNotifier {
       } catch (_) {}
     }
     _clients.clear();
-    try {
-      _mailTmInstance?.close();
-    } catch (_) {}
-    _mailTmInstance = null;
     super.dispose();
   }
 
@@ -98,6 +93,33 @@ class AccountManager extends ChangeNotifier {
   /// Public UI refresh hook (`notifyListeners` is protected) - lets the UI
   /// surface service-driven state changes (nextCycleAt, lastCycleAt).
   void refreshUi() => notifyListeners();
+
+  /// KEEPALIVE/UX: whether an automation cycle for this account is currently
+  /// in flight (used by the token keepalive to avoid racing a cycle).
+  bool isAccountBusy(String id) => _runningCycles.contains(id);
+
+  /// KEEPALIVE: resolves the proxy a background pass should use for [a]
+  /// (manual override first, then the unique-per-account pool binding).
+  Future<ProxyEntry?> ensureProxyFor(Account a) => _ensureProxy(a);
+
+  /// Public logging hook so companion services (keepalive, error advisor)
+  /// can write structured events into the same pipeline as cycles.
+  void logEvent({
+    required LogLevel level,
+    required String category,
+    String accountId = '',
+    String accountLabel = '',
+    required String message,
+  }) {
+    log(LogEvent(
+      ts: DateTime.now(),
+      level: level,
+      category: category,
+      accountId: accountId,
+      accountLabel: accountLabel,
+      message: message,
+    ));
+  }
 
   List<Account> get activeAccounts => accounts
       .where((a) => a.enabled && a.status != AccountStatus.banned)
@@ -216,9 +238,15 @@ class AccountManager extends ChangeNotifier {
     } on SibleApiException catch (e) {
       if (e.isBanned) {
         a.status = AccountStatus.banned;
+        a.lastError = 'Account banned';
+      } else if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
+        // MANUAL: the user's own inbox (Gmail etc.) holds the code - surface
+        // the manual OTP entry card in the UI instead of auto-solving.
+        a.status = AccountStatus.needsOtp;
+        a.lastError = 'OTP verification required';
       } else {
         a.status = AccountStatus.error;
-        a.lastError = e.message;
+        a.lastError = '${e.code}: ${e.message}';
       }
       await saveAccount(a);
       return false;
@@ -257,130 +285,75 @@ class AccountManager extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Account creation via mail.tm (auto account factory)
+  // Manual OTP verification (gmail.com accounts added by the user)
   // ---------------------------------------------------------------------------
 
-  /// Creates [count] accounts using disposable mail.tm mailboxes, verifies
-  /// OTP, logs in and persists them. [onProgress] reports per-slot status.
-  Future<int> createMailTmAccounts({
-    required int count,
-    String? referralCode,
-    required int startIndex,
-    void Function(int index, String stage, {bool ok})? onProgress,
-  }) async {
-    final mail = _mailTm();
-    var created = 0;
-    for (var i = 0; i < count; i++) {
-      final slot = startIndex + i;
-      if (accounts.length >= Limits.maxAccounts) {
-        onProgress?.call(slot, 'limit reached', ok: false);
-        break;
+  /// Verifies an OTP code for a manually-added account (the user reads the
+  /// code from their own e-mail inbox - Gmail etc.) and captures the session
+  /// tokens returned by /auth/verify-otp. Returns true on success; the
+  /// account status is updated either way and failures are logged.
+  Future<bool> verifyOtpForAccount(Account a, String code,
+      {String purpose = 'login'}) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) return false;
+    final client = clientFor(a, null);
+    try {
+      final t =
+          await client.verifyOtpForTokens(a.email, trimmed, purpose: purpose);
+      final secrets = await store.readSecrets(a.id);
+      if (secrets != null) {
+        secrets
+          ..accessToken = t.accessToken
+          ..refreshToken = t.refreshToken;
+        await store.writeSecrets(a.id, secrets);
       }
-      try {
-        onProgress?.call(slot, 'creating mailbox', ok: true);
-        final box = await mail.createAccount(prefix: 'sibler');
-        final acc = Account(
-          id: randomToken(length: 10),
-          email: box.address,
-          label: 'Miner ${slot + 1}',
-          isTempMailbox: true,
-          mailPassword: box.password,
-          mailToken: box.token,
-        );
-        await store.writeSecrets(
-            acc.id, AccountSecrets(password: box.password));
-        accounts.add(acc);
-        await saveAccount(acc);
-
-        onProgress?.call(slot, 'registering', ok: true);
-        final client = clientFor(acc, null);
-        final username = 'mn${randomToken(length: 8)}';
-        // Snapshot mailbox state before triggering actions so we never pick
-        // up a stale code (mail.tm deliveries can race within seconds).
-        var knownMailIds = <String>{};
-        try {
-          knownMailIds =
-              (await mail.messages(box.token)).map((m) => '${m['id']}').toSet();
-        } catch (_) {}
-        try {
-          await client.register(
-            email: box.address,
-            password: box.password,
-            username: username,
-            referralCode: referralCode,
-          );
-        } on SibleApiException catch (e) {
-          // Registration may still require e-mail verification first.
-          _logFor(
-              acc, LogLevel.warn, 'auth', 'register: ${e.code} ${e.message}');
-        }
-
-        onProgress?.call(slot, 'waiting OTP', ok: true);
-        String code;
-        try {
-          code = await mail.waitForOtp(box, skipIds: knownMailIds);
-        } on MailTmException {
-          await client.resendOtp(box.address);
-          code = await mail.waitForOtp(box, skipIds: knownMailIds);
-        }
-        onProgress?.call(slot, 'verifying OTP', ok: true);
-        var verifiedWithTokens = false;
-        try {
-          // /auth/verify-otp returns the session tokens directly - capture
-          // them instead of calling /auth/login (which would trigger a
-          // fresh needsOtp challenge for every fresh account).
-          await client.verifyOtpForTokens(box.address, code,
-              purpose: 'verify_email');
-          verifiedWithTokens = true;
-          final secretsNow = await store.readSecrets(acc.id);
-          if (secretsNow != null) {
-            secretsNow
-              ..accessToken = client.tokens?.accessToken
-              ..refreshToken = client.tokens?.refreshToken;
-            await store.writeSecrets(acc.id, secretsNow);
-          }
-          acc
-            ..status = AccountStatus.idle
-            ..lastError = null;
-          await saveAccount(acc);
-        } on SibleApiException catch (e) {
-          _logFor(acc, LogLevel.warn, 'auth', 'verify: ${e.code} ${e.message}');
-        }
-
-        if (verifiedWithTokens) {
-          _logFor(acc, LogLevel.success, 'auth', 'mail.tm account ready');
-          created++;
-          await Future<void>.delayed(jitter(baseMs: 1200, spreadMs: 1800));
-          continue;
-        }
-
-        onProgress?.call(slot, 'logging in', ok: true);
-        final okLogin = await testLogin(acc);
-        _logFor(
-            acc,
-            okLogin ? LogLevel.success : LogLevel.error,
-            'auth',
-            okLogin
-                ? 'mail.tm account ready'
-                : 'login after verification failed');
-        created++;
-      } catch (e) {
-        onProgress?.call(slot, 'failed: $e', ok: false);
-        log(LogEvent(
-          ts: DateTime.now(),
-          level: LogLevel.error,
-          category: 'auth',
-          message: 'mail.tm account #$slot failed: $e',
-        ));
-      }
-      await Future<void>.delayed(jitter(baseMs: 1200, spreadMs: 1800));
+      a
+        ..status = AccountStatus.idle
+        ..lastError = null;
+      await saveAccount(a);
+      _logFor(a, LogLevel.success, 'auth', 'OTP verified - session ready');
+      return true;
+    } on SibleApiException catch (e) {
+      a
+        ..status = AccountStatus.needsOtp
+        ..lastError = '${e.code}: ${e.message}';
+      await saveAccount(a);
+      _logFor(a, LogLevel.error, 'auth', 'OTP verify failed: ${e.message}');
+      return false;
+    } catch (e) {
+      _logFor(a, LogLevel.error, 'auth', 'OTP verify crashed: $e');
+      return false;
     }
-    notifyListeners();
-    return created;
   }
 
-  MailTmService? _mailTmInstance;
-  MailTmService _mailTm() => _mailTmInstance ??= MailTmService();
+  /// Re-sends the verification OTP for a manual account (best-effort).
+  Future<void> resendOtpForAccount(Account a) async {
+    final client = clientFor(a, null);
+    try {
+      await client.resendOtp(a.email);
+      _logFor(a, LogLevel.info, 'auth', 'OTP re-sent to ${a.email}');
+    } on SibleApiException catch (e) {
+      _logFor(a, LogLevel.warn, 'auth', 'resend OTP: ${e.code} ${e.message}');
+    } catch (e) {
+      _logFor(a, LogLevel.warn, 'auth', 'resend OTP failed: $e');
+    }
+  }
+
+  /// Updates the stored password of a manual account (e.g. after the user
+  /// changed it on the website) and immediately re-tests the login.
+  Future<bool> updatePassword(Account a, String newPassword) async {
+    final secrets =
+        await store.readSecrets(a.id) ?? AccountSecrets(password: newPassword);
+    secrets.password = newPassword;
+    try {
+      await store.writeSecrets(a.id, secrets);
+    } catch (e) {
+      _logFor(a, LogLevel.error, 'auth', 'saving credentials failed: $e');
+      rethrow;
+    }
+    _logFor(a, LogLevel.info, 'auth', 'Credentials updated - testing login');
+    return testLogin(a);
+  }
 
   // INFERHUB: per-cycle AI brain cache. Null = disabled/unavailable; every
   // consumer must treat it as optional and fall back to the static policy.
@@ -480,8 +453,7 @@ class AccountManager extends ChangeNotifier {
         _logFor(a, LogLevel.success, 'auth', 'Logged in');
       } on SibleApiException catch (e) {
         ok = false;
-        await _handleAuthError(a, e,
-            notifyAlerts: notifyAlerts, client: client);
+        await _handleAuthError(a, e, notifyAlerts: notifyAlerts);
         await saveAccount(a);
         return false;
       }
@@ -550,8 +522,7 @@ class AccountManager extends ChangeNotifier {
     } on SibleApiException catch (e) {
       ok = false;
       if (e.isAuthError) {
-        await _handleAuthError(a, e,
-            notifyAlerts: notifyAlerts, client: client);
+        await _handleAuthError(a, e, notifyAlerts: notifyAlerts);
       } else if (e.code == 'TIMEOUT' ||
           e.code == 'NETWORK_ERROR' ||
           e.code == 'PROXY_ERROR') {
@@ -657,7 +628,7 @@ class AccountManager extends ChangeNotifier {
   }
 
   Future<void> _handleAuthError(Account a, SibleApiException e,
-      {required bool notifyAlerts, SibleApiClient? client}) async {
+      {required bool notifyAlerts}) async {
     if (e.isBanned) {
       a.status = AccountStatus.banned;
       a.lastError = 'Account banned';
@@ -670,41 +641,12 @@ class AccountManager extends ChangeNotifier {
       return;
     }
     if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
+      // MANUAL ACCOUNTS: the user reads the OTP from their own inbox
+      // (Gmail etc.) and enters it via the account sheet - no auto-solver.
       a.status = AccountStatus.needsOtp;
       a.lastError = 'OTP verification required';
-      if (a.isTempMailbox && a.mailToken != null) {
-        try {
-          final mail = _mailTm();
-          final box = MailTmAccount(
-              address: a.email,
-              password: a.mailPassword ?? '',
-              token: a.mailToken!);
-          // Only accept a code from an email that arrived from now on -
-          // the mailbox may still hold the older sign-up code.
-          final knownMailIds =
-              (await mail.messages(box.token)).map((m) => '${m['id']}').toSet();
-          final code = await mail.waitForOtp(box,
-              timeout: const Duration(seconds: 70), skipIds: knownMailIds);
-          // Use the client the cycle was actually talking through - never
-          // guess the map key (proxyUri vs host:port mismatch).
-          final otpClient = client ?? findAnyClient(a.id);
-          if (otpClient != null) {
-            final t = await otpClient.verifyOtpForTokens(a.email, code,
-                purpose: 'login');
-            final secretsNow = await store.readSecrets(a.id);
-            if (secretsNow != null) {
-              secretsNow
-                ..accessToken = t.accessToken
-                ..refreshToken = t.refreshToken;
-              await store.writeSecrets(a.id, secretsNow);
-            }
-            a.status = AccountStatus.idle;
-            _logFor(a, LogLevel.success, 'auth', 'OTP auto-verified');
-          }
-        } catch (err) {
-          _logFor(a, LogLevel.warn, 'auth', 'auto OTP failed: $err');
-        }
-      }
+      _logFor(a, LogLevel.warn, 'auth',
+          'OTP required - open the account and enter the code from ${a.email}');
       return;
     }
     a.status = AccountStatus.needsRelogin;

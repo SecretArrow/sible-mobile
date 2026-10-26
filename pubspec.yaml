@@ -1,7 +1,7 @@
 name: sible_mobile
 description: "Sible Miner - multi-account Sible Network automation client with proxy engine, background worker and notifications."
 publish_to: "none"
-version: 2.1.1+22
+version: 2.2.0+23
 
 environment:
   sdk: ^3.6.0

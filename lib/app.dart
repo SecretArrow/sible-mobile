@@ -1,6 +1,8 @@
 /// App root: MaterialApp + theme + navigation shell with 6 tabs.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/i18n.dart';
 import 'core/theme.dart';
 import 'services/account_manager.dart';
+// KEEPALIVE: 10-minute token refresher for the UI isolate.
+import 'services/token_keepalive.dart';
 import 'state/providers.dart';
 import 'ui/screens/accounts_screen.dart';
 import 'ui/screens/dashboard_screen.dart';
@@ -26,16 +30,77 @@ class SibleMinerApp extends StatefulWidget {
   State<SibleMinerApp> createState() => _SibleMinerAppState();
 }
 
-class _SibleMinerAppState extends State<SibleMinerApp> {
+class _SibleMinerAppState extends State<SibleMinerApp>
+    with WidgetsBindingObserver {
+  Timer? _uiKeepaliveTimer;
+  bool _keepaliveInFlight = false;
+  DateTime _lastKeepalive = DateTime.now();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // I18N: restore the persisted app language before first frame.
     SharedPreferences.getInstance()
         .then((p) => LocaleController.instance.loadFrom(
               p.getString('settings.lang'),
             ))
         .catchError((_) {});
+    _startUiKeepalive();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _uiKeepaliveTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the foreground: tokens may have aged while backgrounded
+    // (UI timers pause in background) - refresh immediately, then resume the
+    // 10-minute cadence.
+    if (state == AppLifecycleState.resumed) {
+      _runUiKeepalive(force: true);
+    }
+  }
+
+  void _startUiKeepalive() {
+    _uiKeepaliveTimer?.cancel();
+    _uiKeepaliveTimer = Timer.periodic(TokenKeepalive.interval, (_) {
+      _runUiKeepalive();
+    });
+    // First pass after a short settle delay.
+    Future<void>.delayed(const Duration(seconds: 30), () {
+      if (mounted) _runUiKeepalive();
+    });
+  }
+
+  /// UI-isolate keepalive pass. The background service runs the same pass in
+  /// its own isolate; when the automation service is ON we skip here to avoid
+  /// double refresh races on refresh-token rotation. Fully guarded.
+  Future<void> _runUiKeepalive({bool force = false}) async {
+    if (_keepaliveInFlight || !mounted) return;
+    // Respect the minimum cadence unless forced (app resumed).
+    if (!force &&
+        DateTime.now().difference(_lastKeepalive) < TokenKeepalive.interval) {
+      return;
+    }
+    _keepaliveInFlight = true;
+    _lastKeepalive = DateTime.now();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('settings.keepaliveEnabled') ?? true;
+      final serviceOn = prefs.getBool('settings.serviceEnabled') ?? true;
+      if (!enabled || serviceOn) return;
+      await TokenKeepalive.run(widget.deps.accountManager);
+    } catch (e) {
+      // Never crash the shell over a keepalive hiccup.
+      debugPrint('[keepalive-ui] $e');
+    } finally {
+      _keepaliveInFlight = false;
+    }
   }
 
   @override

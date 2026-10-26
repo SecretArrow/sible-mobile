@@ -1,4 +1,5 @@
-/// Accounts fleet: search, list, add (manual or mail.tm auto).
+/// Accounts fleet: search, list, add (manual gmail.com flow) + guided error
+/// fixes ("cara atasi error") on problem accounts.
 library;
 
 import 'package:flutter/material.dart';
@@ -9,8 +10,10 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../models/models.dart';
 import '../../services/account_manager.dart';
+import '../../services/error_advisor.dart';
 import '../widgets/common.dart';
 import 'account_sheet.dart';
+import 'fix_sheet.dart';
 
 class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
@@ -86,9 +89,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
                     icon: Icons.group_add_outlined,
                     title: 'No accounts yet',
                     subtitle:
-                        'Add your first Sible account manually or auto-create test accounts with disposable mail.tm mailboxes.',
+                        'Add the gmail.com accounts you registered manually on sible.network, one by one. The app keeps every session alive.',
                     action: GradientButton(
-                      label: 'Add accounts',
+                      label: 'Add account',
                       icon: Icons.add,
                       onPressed: () => _showAddSheet(context),
                     ),
@@ -255,6 +258,19 @@ class AccountTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 6),
+                  // FIX: one-tap guided remediation for problem accounts.
+                  if (ErrorAdvisor.hasProblem(account))
+                    IconButton(
+                      tooltip: 'How to fix',
+                      onPressed: () => showFixSheet(context, account.id),
+                      icon: Icon(
+                        Icons.healing_outlined,
+                        size: 19,
+                        color: account.status == AccountStatus.banned
+                            ? SibleTheme.danger
+                            : SibleTheme.warning,
+                      ),
+                    ),
                   Column(
                     children: [
                       SizedBox(

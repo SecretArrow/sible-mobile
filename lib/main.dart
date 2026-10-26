@@ -54,6 +54,15 @@ Future<void> boot() async {
   } catch (e) {
     debugPrint('[boot] orientation: $e');
   }
+  // EDGE-TO-EDGE (android/skills system/edge-to-edge): draw behind the
+  // status/navigation bars. Android 15 (targetSdk 35) enforces this anyway;
+  // enabling it explicitly keeps old versions consistent. Screens rely on
+  // SafeArea, so content is never clipped.
+  try {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  } catch (e) {
+    debugPrint('[boot] edge-to-edge: $e');
+  }
 
   // Notifications - safe to fail (service degrades to no-ops).
   try {

@@ -21,6 +21,8 @@ import 'notification_service.dart';
 import 'proxy_engine.dart';
 // STATS: earnings recorder in the service isolate.
 import 'stats_service.dart';
+// KEEPALIVE: 10-minute auth token refresh pass.
+import 'token_keepalive.dart';
 
 const String serviceRunNowEvent = 'run_now';
 const String serviceStopEvent = 'stop_service';
@@ -41,7 +43,11 @@ Future<FlutterBackgroundService> configureBackgroundService({
       initialNotificationTitle: 'Sible Miner',
       initialNotificationContent: 'Background worker starting...',
       foregroundServiceNotificationId: NotificationIds.service,
-      foregroundServiceTypes: [AndroidForegroundType.dataSync],
+      // Android architecture (android/skills): `dataSync` foreground services
+      // are capped at ~6h/day on Android 15+, which would kill a 24/7 miner.
+      // `specialUse` is the correct long-running type for a user-initiated
+      // automation worker (declared in the manifest with an FGS_SUBTYPE).
+      foregroundServiceTypes: [AndroidForegroundType.specialUse],
     ),
     iosConfiguration: IosConfiguration(
       onForeground: onServiceStart,
@@ -72,6 +78,7 @@ Future<void> onServiceStart(ServiceInstance service) async {
 
   bool stopping = false;
   bool cycleInFlight = false;
+  bool keepaliveInFlight = false;
   int cycleCount = 0;
 
   Future<AccountManager> buildManager() async {
@@ -99,6 +106,15 @@ Future<void> onServiceStart(ServiceInstance service) async {
     }
   }
 
+  Future<bool> keepaliveEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('settings.keepaliveEnabled') ?? true;
+    } catch (_) {
+      return true; // failing-open keeps sessions alive by default
+    }
+  }
+
   Future<void> updateServiceNotification(String text) async {
     try {
       await android?.setForegroundNotificationInfo(
@@ -106,6 +122,39 @@ Future<void> onServiceStart(ServiceInstance service) async {
         content: text,
       );
     } catch (_) {}
+  }
+
+  /// KEEPALIVE: one 10-minute auth-refresh pass over all accounts. Fully
+  /// guarded - a failure must never take down the cron loop.
+  Future<void> runKeepalivePass() async {
+    if (keepaliveInFlight || stopping) return;
+    keepaliveInFlight = true;
+    AccountManager? manager;
+    try {
+      if (!await keepaliveEnabled()) return;
+      manager = await buildManager();
+      // Mirror the proxy settings so keepalive uses the same network
+      // identity as automation cycles (per-account isolation preserved).
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        manager.useProxies = prefs.getBool('settings.proxyEnabled') ?? true;
+        manager.allowDirectFallback =
+            prefs.getBool('settings.allowDirectFallback') ?? false;
+      } catch (_) {}
+      final summary = await TokenKeepalive.run(manager);
+      debugPrint('[service] $summary');
+      if (summary.failed > 0) {
+        await updateServiceNotification(
+            'Keepalive: ${summary.failed} account(s) need attention');
+      }
+    } catch (e) {
+      debugPrint('[service] keepalive error: $e');
+    } finally {
+      try {
+        await manager?.dispose();
+      } catch (_) {}
+      keepaliveInFlight = false;
+    }
   }
 
   Future<void> runCycleNow() async {
@@ -192,6 +241,24 @@ Future<void> onServiceStart(ServiceInstance service) async {
   } catch (e) {
     debugPrint('[service] stats attach failed: $e');
   }
+  // KEEPALIVE loop: independent 10-minute cadence (TokenKeepalive.interval)
+  // so tokens are refreshed even when the mining interval is set much larger.
+  // The whole body is guarded; the timer can never die silently.
+  Timer.periodic(TokenKeepalive.interval, (_) {
+    runKeepalivePass().catchError((e, st) {
+      debugPrint('[service] keepalive timer error: $e\n$st');
+      keepaliveInFlight = false;
+    });
+  });
+  // First pass shortly after boot (gives the first cycle time to settle).
+  Future<void>.delayed(const Duration(seconds: 45), () {
+    if (stopping) return;
+    runKeepalivePass().catchError((e, st) {
+      debugPrint('[service] first keepalive error: $e\n$st');
+      keepaliveInFlight = false;
+    });
+  });
+
   // Main loop: sequential non-overlapping cycles. The WHOLE body is guarded
   // so that no exception - from any source - can kill the cron silently
   // while the foreground notification keeps showing "running".

@@ -141,6 +141,10 @@ class Account {
   DateTime? sessionEndsAt;
   DateTime? lastCheck;
   DateTime? lastClaim;
+
+  /// KEEPALIVE: last time the session was confirmed alive / tokens were
+  /// rotated (driven by the 10-minute token keepalive pass).
+  DateTime? lastKeepalive;
   int claimsToday;
   int accelerationsToday;
   int extensionOpensToday;
@@ -174,6 +178,7 @@ class Account {
     this.sessionEndsAt,
     this.lastCheck,
     this.lastClaim,
+    this.lastKeepalive,
     this.claimsToday = 0,
     this.accelerationsToday = 0,
     this.extensionOpensToday = 0,
@@ -219,6 +224,7 @@ class Account {
         'sessionEndsAt': sessionEndsAt?.toIso8601String(),
         'lastCheck': lastCheck?.toIso8601String(),
         'lastClaim': lastClaim?.toIso8601String(),
+        'lastKeepalive': lastKeepalive?.toIso8601String(),
         'claimsToday': claimsToday,
         'accelerationsToday': accelerationsToday,
         'extensionOpensToday': extensionOpensToday,
@@ -247,6 +253,7 @@ class Account {
         sessionEndsAt: DateTime.tryParse(j['sessionEndsAt'] as String? ?? ''),
         lastCheck: DateTime.tryParse(j['lastCheck'] as String? ?? ''),
         lastClaim: DateTime.tryParse(j['lastClaim'] as String? ?? ''),
+        lastKeepalive: DateTime.tryParse(j['lastKeepalive'] as String? ?? ''),
         claimsToday: int.tryParse('${j['claimsToday']}') ?? 0,
         accelerationsToday: int.tryParse('${j['accelerationsToday']}') ?? 0,
         extensionOpensToday: int.tryParse('${j['extensionOpensToday']}') ?? 0,
