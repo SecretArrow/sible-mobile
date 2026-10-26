@@ -11,6 +11,9 @@ import '../../services/background_service.dart';
 import '../../services/notification_service.dart';
 import '../../state/providers.dart';
 
+// INFERHUB: AI brain settings card (optional InferHub integration).
+import 'inferhub_settings_section.dart';
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -154,6 +157,8 @@ class SettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          // INFERHUB: AI brain settings card (optional InferHub integration).
+          const InferHubSettingsSection(),
           _Group(
             title: 'Account factory',
             children: [

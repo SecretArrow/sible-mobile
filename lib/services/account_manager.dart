@@ -11,6 +11,8 @@ import '../core/constants.dart';
 import '../core/utils.dart';
 import '../models/models.dart';
 import 'account_store.dart';
+// INFERHUB: optional AI brain (reward-task solver + acceleration planner).
+import 'inferhub_brain.dart';
 import 'mailtm_service.dart';
 import 'mining_policy.dart';
 import 'notification_service.dart';
@@ -326,6 +328,26 @@ class AccountManager extends ChangeNotifier {
   MailTmService? _mailTmInstance;
   MailTmService _mailTm() => _mailTmInstance ??= MailTmService();
 
+  // INFERHUB: per-cycle AI brain cache. Null = disabled/unavailable; every
+  // consumer must treat it as optional and fall back to the static policy.
+  InferHubBrain? _inferhubBrain;
+  bool _inferhubBrainLoaded = false;
+
+  /// INFERHUB: returns the cached AI brain, creating it once per cycle run.
+  /// Never throws; null when InferHub is disabled or fails to initialize.
+  Future<InferHubBrain?> _inferhubBrainForCycle() async {
+    if (!_inferhubBrainLoaded) {
+      _inferhubBrainLoaded = true;
+      try {
+        _inferhubBrain = await InferHubBrain.maybeCreate();
+      } catch (e) {
+        debugPrint('[inferhub] brain init failed, static policy kept: $e');
+        _inferhubBrain = null;
+      }
+    }
+    return _inferhubBrain;
+  }
+
   // ---------------------------------------------------------------------------
   // Cycles
   // ---------------------------------------------------------------------------
@@ -555,7 +577,26 @@ class AccountManager extends ChangeNotifier {
   Future<void> _accelerateFlow(
       Account a, SibleApiClient client, MiningStatusView status) async {
     var watched = 0;
-    final target = AccelerateTargets.adsFor(a.accelerateTargetPct);
+    // INFERHUB: the AI planner may override the static 20/40/60% target for
+    // this session; any failure keeps the account's static target.
+    var targetPct = a.accelerateTargetPct;
+    final brain = await _inferhubBrainForCycle();
+    if (brain != null) {
+      try {
+        final aiPct = await brain.accelerationTargetPercent(
+          fallbackPercent: a.accelerateTargetPct,
+          adsWatchedThisSession: 0,
+        );
+        if (aiPct != a.accelerateTargetPct) {
+          _logFor(a, LogLevel.info, 'accel',
+              'AI target $aiPct% (static ${a.accelerateTargetPct}%)');
+        }
+        targetPct = aiPct;
+      } catch (e) {
+        _logFor(a, LogLevel.warn, 'accel', 'AI planner failed: $e');
+      }
+    }
+    final target = AccelerateTargets.adsFor(targetPct);
     final beforeBoost = a.boostPct;
     for (var i = 0; i < target; i++) {
       MiningStatusView st = status;
@@ -685,10 +726,37 @@ class AccountManager extends ChangeNotifier {
   Future<void> _tasksFlow(Account a, SibleApiClient client) async {
     try {
       final tasks = TaskView.listFrom(await client.rewardTasks());
+      // INFERHUB: task solver hook - when enabled, the AI crafts a submission
+      // payload per eligible task before the existing claim call path.
+      final brain = await _inferhubBrainForCycle();
       var claimed = 0;
       for (final t in tasks) {
         if (!t.claimReady || claimed >= 3) continue;
         try {
+          // INFERHUB: ask the AI for a submission payload; null (solver off,
+          // declined, failed) keeps the plain claim path untouched.
+          if (brain != null) {
+            try {
+              final payload =
+                  await brain.taskSubmissionPayload(<String, dynamic>{
+                'id': t.id,
+                'action': t.action,
+                'state': t.state,
+                'enabled': t.enabled,
+                'eligible': t.eligible,
+              });
+              final submission = payload?['submission'];
+              if (payload != null &&
+                  submission is Map &&
+                  submission.isNotEmpty) {
+                await client.submitTask(t.id,
+                    body: Map<String, dynamic>.from(submission));
+                _logFor(a, LogLevel.info, 'task', 'AI submission: ${t.id}');
+              }
+            } catch (e) {
+              _logFor(a, LogLevel.warn, 'task', 'AI solver: $e');
+            }
+          }
           await client.claimTask(t.id);
           claimed++;
           a.claimsToday++;
@@ -727,6 +795,11 @@ class AccountManager extends ChangeNotifier {
     }
     cycleRunning = true;
     notifyListeners();
+    // INFERHUB: load the AI brain once for this whole cycle run (settings
+    // changes are picked up again on the next run).
+    _inferhubBrain = null;
+    _inferhubBrainLoaded = false;
+    await _inferhubBrainForCycle();
     await loadAll();
     final targets = activeAccounts;
     var success = 0, failed = 0, claims = 0, accelerations = 0, ext = 0;

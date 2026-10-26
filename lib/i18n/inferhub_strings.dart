@@ -105,4 +105,28 @@ const Map<String, Map<String, String>> inferhubStrings = {
     'en': 'AI unavailable — falling back to static policy',
     'id': 'AI tidak tersedia — kembali ke policy statis',
   },
+  'inferhub.pickTitle': {
+    'en': 'InferHub models',
+    'id': 'Model InferHub',
+  },
+  'inferhub.freeBadge': {
+    'en': 'FREE',
+    'id': 'GRATIS',
+  },
+  'inferhub.modelContext': {
+    'en': 'context',
+    'id': 'konteks',
+  },
+  'inferhub.apiKeySaved': {
+    'en': 'API key saved',
+    'id': 'Kunci API tersimpan',
+  },
+  'inferhub.testFailed': {
+    'en': 'Test failed',
+    'id': 'Tes gagal',
+  },
+  'inferhub.docs': {
+    'en': 'Open InferHub docs',
+    'id': 'Buka dokumentasi InferHub',
+  },
 };
