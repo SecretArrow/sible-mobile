@@ -1,6 +1,8 @@
 /// Dashboard: fleet overview + one-tap controls.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:provider/provider.dart';
@@ -12,8 +14,57 @@ import '../../services/background_service.dart';
 import '../../state/providers.dart';
 import '../widgets/common.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  StreamSubscription<Map<String, dynamic>>? _cycleDoneSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Mirror background-service cycles into the UI: without this listener
+    // the dashboard countdown / "last cycle" never reflect the service.
+    final deps = context.read<AppDependencies>();
+    final service = FlutterBackgroundService();
+    _cycleDoneSub = service.on(serviceCycleDoneEvent).listen((data) {
+      final mgr = deps.accountManager;
+      final nextRaw = data['nextCycleAt'];
+      final next = nextRaw is String ? DateTime.tryParse(nextRaw) : null;
+      final error = data['error'];
+      final hasError = error != null && '$error'.isNotEmpty;
+      if (next != null) {
+        mgr.nextCycleAt = next;
+      }
+      if (data['accountsRun'] is num) {
+        // Synthetic event so background activity is visible on the dashboard.
+        mgr.log(LogEvent(
+          ts: DateTime.now(),
+          level: hasError ? LogLevel.error : LogLevel.success,
+          category: 'cycle',
+          message: hasError
+              ? 'Background cycle error: $error'
+              : 'Background cycle done: ${data['success'] ?? 0} ok · '
+                  '${data['failed'] ?? 0} failed · '
+                  '${data['claims'] ?? 0} claims · '
+                  '+${data['accelerations'] ?? 0} accel · '
+                  '${data['extensionOpens'] ?? 0} ext',
+        ));
+        mgr.lastCycleAt = DateTime.now();
+      }
+      mgr.notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _cycleDoneSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,16 +221,55 @@ class DashboardScreen extends StatelessWidget {
 
   Future<void> _runNow(BuildContext context, AppDependencies deps) async {
     final service = FlutterBackgroundService();
-    if (await service.isRunning()) {
-      requestRunNow(service);
+    final mgr = deps.accountManager;
+    if (mgr.cycleRunning) return; // double-tap guard (inline path)
+    try {
+      if (await service.isRunning()) {
+        requestRunNow(service);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Background cycle triggered')),
+          );
+        }
+      } else if (deps.settings.serviceEnabled) {
+        // Service SHOULD be running (auto mode) - restart it; the service
+        // runs its own cycle immediately. Avoids the cross-isolate
+        // double-cycle race of an inline run.
+        try {
+          await service.startService();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Background worker started - cycle running')),
+            );
+          }
+        } catch (e) {
+          // Fallback: run inline in the UI isolate.
+          final summary = await mgr.runAllCycles(notifySummary: true);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Cycle done: ${summary.headline}')),
+            );
+          }
+        }
+      } else {
+        // Auto mode is off - run inline on demand.
+        final summary = await mgr.runAllCycles(notifySummary: true);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(summary.accountsRun == 0
+                    ? 'No enabled accounts to cycle'
+                    : 'Cycle done: ${summary.headline}')),
+          );
+        }
+      }
+    } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Triggered background cycle')),
+          SnackBar(content: Text('Cycle failed: $e')),
         );
       }
-    } else {
-      // Service not running - run inline.
-      await deps.accountManager.runAllCycles(notifySummary: true);
     }
   }
 }
@@ -198,11 +288,24 @@ class ServicePill extends StatelessWidget {
       onTap: () async {
         final service = FlutterBackgroundService();
         final newValue = !on;
-        await settings.setServiceEnabled(newValue);
-        if (newValue) {
-          await service.startService();
-        } else {
-          await stopBackgroundService(service);
+        try {
+          if (newValue) {
+            // Start FIRST, persist only on success - otherwise the pill
+            // shows "AUTO ON" while nothing is actually running.
+            final started = await service.startService();
+            await settings.setServiceEnabled(started != false);
+          } else {
+            await settings.setServiceEnabled(false);
+            await stopBackgroundService(service);
+          }
+        } catch (e) {
+          await settings.setServiceEnabled(!newValue); // revert UI state
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(
+                  'Gagal ${newValue ? 'menyalakan' : 'mematikan'} service: $e')),
+            );
+          }
         }
       },
       child: Container(

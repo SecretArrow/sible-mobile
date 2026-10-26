@@ -59,6 +59,14 @@ class AccountManager extends ChangeNotifier {
   DateTime? lastCycleAt;
   DateTime? nextCycleAt;
 
+  /// Settings mirrored from prefs (honored by the automation).
+  bool useProxies = true;
+  bool allowDirectFallback = false;
+
+  /// Per-account re-entrancy guard: one cycle per account at a time, no
+  /// matter how many callers race (UI button spam included).
+  final Set<String> _runningCycles = {};
+
   final Map<String, SibleApiClient> _clients = {};
 
   AccountManager({
@@ -66,6 +74,23 @@ class AccountManager extends ChangeNotifier {
     required this.proxyEngine,
     required this.notifications,
   });
+
+  /// Releases every network resource owned by this manager. Used by the
+  /// background service between cycles to avoid fd exhaustion over long
+  /// shifts. NEVER call this on the long-lived UI manager.
+  Future<void> dispose() async {
+    for (final c in _clients.values) {
+      try {
+        c.close();
+      } catch (_) {}
+    }
+    _clients.clear();
+    try {
+      _mailTmInstance?.close();
+    } catch (_) {}
+    _mailTmInstance = null;
+    super.dispose();
+  }
 
   List<LogEvent> get liveLog => List.unmodifiable(_liveLog);
 
@@ -158,7 +183,11 @@ class AccountManager extends ChangeNotifier {
   }
 
   Future<void> removeAccount(String id) async {
-    _clients.remove(id)?.close();
+    // Close EVERY client variant (direct + all proxies) for this account.
+    final deadKeys = _clients.keys.where((k) => k.startsWith('$id|')).toList();
+    for (final k in deadKeys) {
+      _clients.remove(k)?.close();
+    }
     await proxyEngine.release(id);
     accounts.removeWhere((a) => a.id == id);
     await store.deleteAccount(id);
@@ -205,7 +234,21 @@ class AccountManager extends ChangeNotifier {
   }
 
   void invalidateClient(Account a) {
-    _clients.removeWhere((k, v) => k.startsWith('${a.id}|'));
+    // Closing the removed clients actually releases their sockets.
+    final deadKeys =
+        _clients.keys.where((k) => k.startsWith('${a.id}|')).toList();
+    for (final k in deadKeys) {
+      _clients.remove(k)?.close();
+    }
+  }
+
+  /// Any live client for the account (used for OTP recovery on whatever
+  /// connection the cycle was using).
+  SibleApiClient? findAnyClient(String accountId) {
+    for (final entry in _clients.entries) {
+      if (entry.key.startsWith('$accountId|')) return entry.value;
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -359,25 +402,57 @@ class AccountManager extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   /// Run one full automation pass for a single account.
+  ///
+  /// Crash-proof: per-account re-entrancy guard + a catch-all wrapper, so
+  /// NO exception thrown anywhere in the flow (storage, plugin, logic) can
+  /// escape into the caller or kill a batch worker.
   Future<bool> runCycle(Account a, {bool notifyAlerts = true}) async {
+    if (_runningCycles.contains(a.id)) return false;
+    _runningCycles.add(a.id);
+    try {
+      return await _runCycleInner(a, notifyAlerts: notifyAlerts);
+    } catch (e, st) {
+      debugPrint('[cycle] crash ${a.id}: $e\n$st');
+      try {
+        a.status = AccountStatus.error;
+        a.lastError = '$e';
+        _logFor(a, LogLevel.error, 'system', 'cycle crash: $e');
+        await saveAccount(a);
+      } catch (_) {}
+      return false;
+    } finally {
+      _runningCycles.remove(a.id);
+    }
+  }
+
+  Future<bool> _runCycleInner(Account a, {required bool notifyAlerts}) async {
     a.rolloverDayIfNeeded();
     a.lastCheck = DateTime.now();
     var ok = true;
 
-    // 1) Proxy - unique per account, rotate on failure.
-    var proxy = await _ensureProxy(a);
-    if (proxy == null) {
-      a.status = AccountStatus.error;
-      a.lastError =
-          'No healthy proxy available (unique-per-account pool empty)';
-      _logFor(a, LogLevel.error, 'proxy', a.lastError!);
-      await saveAccount(a);
-      return false;
+    // 1) Proxy - unique per account, rotate on failure. Honors the
+    //    "use proxies" / "direct fallback" settings.
+    ProxyEntry? proxy;
+    if (useProxies) {
+      proxy = await _ensureProxy(a);
+      if (proxy == null && !allowDirectFallback) {
+        a.status = AccountStatus.error;
+        a.lastError =
+            'No healthy proxy available (unique-per-account pool empty)';
+        _logFor(a, LogLevel.error, 'proxy', a.lastError!);
+        await saveAccount(a);
+        return false;
+      }
     }
-    a.proxyKey = proxy.key;
-    a.proxyLabel = '${proxy.latencyMs}ms';
+    if (proxy != null) {
+      a.proxyKey = proxy.key;
+      a.proxyLabel = '${proxy.latencyMs}ms';
+    } else {
+      a.proxyKey = null;
+      a.proxyLabel = 'direct';
+    }
 
-    var client = clientFor(a, proxy.proxyUri);
+    var client = clientFor(a, proxy?.proxyUri);
 
     // 2) Auth.
     final secrets = await store.readSecrets(a.id);
@@ -400,7 +475,8 @@ class AccountManager extends ChangeNotifier {
         _logFor(a, LogLevel.success, 'auth', 'Logged in');
       } on SibleApiException catch (e) {
         ok = false;
-        await _handleAuthError(a, e, notifyAlerts: notifyAlerts);
+        await _handleAuthError(a, e,
+            notifyAlerts: notifyAlerts, client: client);
         await saveAccount(a);
         return false;
       }
@@ -469,7 +545,8 @@ class AccountManager extends ChangeNotifier {
     } on SibleApiException catch (e) {
       ok = false;
       if (e.isAuthError) {
-        await _handleAuthError(a, e, notifyAlerts: notifyAlerts);
+        await _handleAuthError(a, e,
+            notifyAlerts: notifyAlerts, client: client);
       } else if (e.code == 'TIMEOUT' ||
           e.code == 'NETWORK_ERROR' ||
           e.code == 'PROXY_ERROR') {
@@ -575,7 +652,7 @@ class AccountManager extends ChangeNotifier {
   }
 
   Future<void> _handleAuthError(Account a, SibleApiException e,
-      {required bool notifyAlerts}) async {
+      {required bool notifyAlerts, SibleApiClient? client}) async {
     if (e.isBanned) {
       a.status = AccountStatus.banned;
       a.lastError = 'Account banned';
@@ -603,9 +680,11 @@ class AccountManager extends ChangeNotifier {
               (await mail.messages(box.token)).map((m) => '${m['id']}').toSet();
           final code = await mail.waitForOtp(box,
               timeout: const Duration(seconds: 70), skipIds: knownMailIds);
-          final client = _clients['${a.id}|${a.proxyKey ?? 'direct'}'];
-          if (client != null) {
-            final t = await client.verifyOtpForTokens(a.email, code,
+          // Use the client the cycle was actually talking through - never
+          // guess the map key (proxyUri vs host:port mismatch).
+          final otpClient = client ?? findAnyClient(a.id);
+          if (otpClient != null) {
+            final t = await otpClient.verifyOtpForTokens(a.email, code,
                 purpose: 'login');
             final secretsNow = await store.readSecrets(a.id);
             if (secretsNow != null) {
@@ -866,73 +945,78 @@ class AccountManager extends ChangeNotifier {
     // changes are picked up again on the next run).
     _inferhubBrain = null;
     _inferhubBrainLoaded = false;
-    await _inferhubBrainForCycle();
-    await loadAll();
-    final targets = activeAccounts;
-    var success = 0, failed = 0, claims = 0, accelerations = 0, ext = 0;
+    try {
+      await _inferhubBrainForCycle();
+      await loadAll();
+      final targets = activeAccounts;
+      var success = 0, failed = 0, claims = 0, accelerations = 0, ext = 0;
 
-    final results = <bool>[];
-    final lock = <int>[];
-    int idx = 0;
-    Future<void> worker(int workerId) async {
-      while (true) {
-        if (idx >= targets.length) break;
-        final i = idx++;
-        lock.add(workerId);
-        final a = targets[i];
-        try {
-          await Future<void>.delayed(Duration(
-              milliseconds: 150 * i % 1200 + Random(workerId).nextInt(300)));
-          final ok = await runCycle(a, notifyAlerts: notifyAlerts);
-          results.add(ok);
-          if (ok) {
-            success++;
-          } else {
+      final results = <bool>[];
+      int idx = 0;
+      Future<void> worker(int workerId) async {
+        while (true) {
+          if (idx >= targets.length) break;
+          final i = idx++;
+          final a = targets[i];
+          try {
+            await Future<void>.delayed(Duration(
+                milliseconds: 150 * i % 1200 + Random(workerId).nextInt(300)));
+            final ok = await runCycle(a, notifyAlerts: notifyAlerts);
+            results.add(ok);
+            if (ok) {
+              success++;
+            } else {
+              failed++;
+            }
+            claims += a.claimsToday;
+            accelerations += a.accelerationsToday;
+            ext += a.extensionOpensToday;
+          } catch (e) {
             failed++;
+            _logFor(a, LogLevel.error, 'system', 'cycle crash: $e');
           }
-          claims += a.claimsToday;
-          accelerations += a.accelerationsToday;
-          ext += a.extensionOpensToday;
-        } catch (e) {
-          failed++;
-          _logFor(a, LogLevel.error, 'system', 'cycle crash: $e');
-        } finally {
-          lock.remove(workerId);
         }
       }
-    }
 
-    final workers = List.generate(
-        max(1, min(concurrency, targets.isEmpty ? 1 : targets.length)), worker);
-    await Future.wait(workers);
+      final workers = List.generate(
+          max(1, min(concurrency, targets.isEmpty ? 1 : targets.length)),
+          worker);
+      await Future.wait(workers);
 
-    cycleRunning = false;
-    final finishedAt = DateTime.now();
-    lastCycleAt = finishedAt;
-    final summary = CycleSummary(
-      accountsRun: targets.length,
-      success: success,
-      failed: failed,
-      claims: claims,
-      accelerations: accelerations,
-      extensionOpens: ext,
-      at: finishedAt,
-    );
-    notifyListeners();
+      final finishedAt = DateTime.now();
+      lastCycleAt = finishedAt;
+      final summary = CycleSummary(
+        accountsRun: targets.length,
+        success: success,
+        failed: failed,
+        claims: claims,
+        accelerations: accelerations,
+        extensionOpens: ext,
+        at: finishedAt,
+      );
+      notifyListeners();
 
-    if (notifySummary && summary.accountsRun > 0) {
-      // OPS: smart gate — cycle_ok is suppressed in error-only mode.
-      final allowed = await _notifAllowed('cycle_ok', 'global',
-          isError: false, isClaim: summary.claims > 0);
-      if (allowed) {
-        await notifications.notify(
-          title: 'Sible Miner - cycle done',
-          body: '${summary.headline} · ${summary.accountsRun} accounts',
-          channel: Channels.events,
-          silent: true,
-        );
+      if (notifySummary && summary.accountsRun > 0) {
+        // OPS: smart gate — cycle_ok is suppressed in error-only mode.
+        final allowed = await _notifAllowed('cycle_ok', 'global',
+            isError: false, isClaim: summary.claims > 0);
+        if (allowed) {
+          try {
+            await notifications.notify(
+              title: 'Sible Miner - cycle done',
+              body: '${summary.headline} · ${summary.accountsRun} accounts',
+              channel: Channels.events,
+              silent: true,
+            );
+          } catch (_) {}
+        }
       }
+      return summary;
+    } finally {
+      // ALWAYS reset - even if the brain/loadAll or anything else threw, the
+      // next cycle must never be silently blocked by a latched flag.
+      cycleRunning = false;
+      notifyListeners();
     }
-    return summary;
   }
 }

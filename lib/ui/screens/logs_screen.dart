@@ -9,6 +9,7 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../services/account_manager.dart';
 import '../../services/log_filter.dart';
+import '../../state/providers.dart';
 import '../widgets/common.dart';
 import 'logs_controls.dart';
 
@@ -22,6 +23,38 @@ class LogsScreen extends StatefulWidget {
 class _LogsScreenState extends State<LogsScreen> {
   final LogsFilterState _filter = LogsFilterState();
 
+  /// Events persisted by BOTH isolates (the background service writes here
+  /// too) - without reading from disk, background cycles were invisible.
+  List<LogEvent> _disk = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final deps = context.read<AppDependencies>();
+      final logs = await deps.store.readGlobalLog(tail: 400);
+      if (mounted) setState(() => _disk = logs);
+    } catch (_) {
+      // Log read failure must never break the screen.
+    }
+  }
+
+  /// Disk log + live in-memory log, deduplicated.
+  List<LogEvent> _merged(List<LogEvent> live) {
+    final seen = <String>{};
+    final out = <LogEvent>[];
+    for (final e in [..._disk, ...live]) {
+      final k =
+          '${e.ts.millisecondsSinceEpoch}|${e.message}|${e.accountId}|${e.category}';
+      if (seen.add(k)) out.add(e);
+    }
+    return out;
+  }
+
   @override
   void dispose() {
     _filter.dispose();
@@ -31,7 +64,7 @@ class _LogsScreenState extends State<LogsScreen> {
   @override
   Widget build(BuildContext context) {
     final mgr = context.watch<AccountManager>();
-    final all = mgr.liveLog;
+    final all = _merged(mgr.liveLog);
     final accounts = all
         .map((e) => e.accountLabel)
         .where((l) => l.isNotEmpty)
@@ -111,7 +144,7 @@ class _LogsScreenState extends State<LogsScreen> {
                   )
                 : RefreshIndicator(
                     color: SibleTheme.primary,
-                    onRefresh: () async {},
+                    onRefresh: _refresh,
                     child: ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.only(top: 4, bottom: 24),

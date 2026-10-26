@@ -62,8 +62,47 @@ class ProxyEngine {
   final String Function() _storePathResolver;
   final void Function(String message)? onLog;
 
+  /// Serializes all pool writes (concurrent workers must never interleave
+  /// writeAsString on the same file) and makes them atomic (tmp + rename),
+  /// so a process kill mid-write can never corrupt the pool.
+  Future<void> _saveQueue = Future.value();
+  bool _refreshInFlight = false;
+
   ProxyEngine({required String Function() storePathResolver, this.onLog})
       : _storePathResolver = storePathResolver;
+
+  Future<void> _persist() {
+    _saveQueue = _saveQueue.then((_) => _doSave());
+    return _saveQueue;
+  }
+
+  Future<void> _doSave() async {
+    try {
+      final f = File(_storePathResolver());
+      await f.parent.create(recursive: true);
+      final payload = jsonEncode({
+        'savedAt': DateTime.now().toIso8601String(),
+        'pool': _pool.values
+            .take(Limits.maxPoolTarget)
+            .map((p) => p.toJson())
+            .toList(),
+        'blacklist': _blacklistedFor.toList(),
+      });
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(payload, flush: true);
+      try {
+        await tmp.rename(f.path);
+      } catch (_) {
+        // Fallback (rename can fail across some FS): non-atomic but valid.
+        await f.writeAsString(payload, flush: true);
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      onLog?.call('proxy pool save failed: $e');
+    }
+  }
 
   List<ProxyEntry> get all => _pool.values.toList();
   int get aliveCount => _pool.values.where((p) => p.alive).length;
@@ -109,23 +148,7 @@ class ProxyEngine {
     }
   }
 
-  Future<void> save() async {
-    try {
-      final f = File(_storePathResolver());
-      await f.parent.create(recursive: true);
-      final payload = jsonEncode({
-        'savedAt': DateTime.now().toIso8601String(),
-        'pool': _pool.values
-            .take(Limits.maxPoolTarget)
-            .map((p) => p.toJson())
-            .toList(),
-        'blacklist': _blacklistedFor.toList(),
-      });
-      await f.writeAsString(payload, flush: true);
-    } catch (e) {
-      onLog?.call('proxy pool save failed: $e');
-    }
-  }
+  Future<void> save() => _persist();
 
   // --------------------------------------------------------------------------
   // Fetch + validate
@@ -135,12 +158,14 @@ class ProxyEngine {
       {Duration timeout = const Duration(seconds: 15)}) async {
     final out = <ProxyEntry>[];
     for (final src in sources) {
+      HttpClient? client;
       try {
-        final client = HttpClient()..connectionTimeout = timeout;
+        client = HttpClient()..connectionTimeout = timeout;
         final req = await client.getUrl(src.url);
         final res = await req.close().timeout(timeout);
-        final body = await res.transform(utf8.decoder).join();
-        client.close(force: true);
+        // Body read is bounded - a stalled source must not hang the refresh.
+        final body =
+            await res.transform(utf8.decoder).join().timeout(timeout);
         final parsed = src.geonodeFormat
             ? ProxyEntry.parseGeonode(body)
             : ProxyEntry.parseRawList(body);
@@ -148,6 +173,11 @@ class ProxyEngine {
         onLog?.call('${src.name}: +${parsed.length} proxies');
       } catch (e) {
         onLog?.call('${src.name} fetch failed: $e');
+      } finally {
+        // ALWAYS release the socket pool, success or failure (no fd leak).
+        try {
+          client?.close(force: true);
+        } catch (_) {}
       }
     }
     // Deduplicate by host:port.
@@ -174,19 +204,25 @@ class ProxyEngine {
         final c = candidates[i];
         final sw = Stopwatch()..start();
         var ok = false;
+        HttpClient? client;
         try {
-          final client = HttpClient();
+          client = HttpClient();
           client.connectionTimeout = timeout;
           client.findProxy = (uri) => 'PROXY ${c.host}:${c.port}';
           final req = await client.getUrl(url);
           req.followRedirects = false;
           final res = await req.close().timeout(timeout);
-          await res.drain<void>();
+          // Drain is bounded - one zombie candidate must not hang the refresh.
+          await res.drain<void>().timeout(timeout);
           // Any HTTP response means the proxy reached the target.
           ok = res.statusCode > 0;
-          client.close(force: true);
         } catch (_) {
           ok = false;
+        } finally {
+          // ALWAYS close, success or failure (no per-candidate fd leak).
+          try {
+            client?.close(force: true);
+          } catch (_) {}
         }
         sw.stop();
         done++;
@@ -212,40 +248,56 @@ class ProxyEngine {
 
   /// Full refresh: fetch fresh lists, validate, rebuild the pool (keeping
   /// assignments to accounts whose proxy is still alive).
+  ///
+  /// Single-flight: concurrent callers await the SAME in-progress refresh
+  /// instead of launching parallel fetch/validate storms (rate-limit +
+  /// battery protection when the pool runs dry with many accounts).
   Future<ProxyStats> refreshPool({
     int target = Limits.defaultPoolTarget,
     void Function(String stage)? onStage,
   }) async {
-    onStage?.call('fetching');
-    final candidates = await fetchFromSources();
-    if (candidates.isEmpty) {
-      onLog?.call('no proxy candidates found from sources');
-      await save();
+    if (_refreshInFlight) {
+      onLog?.call('refreshPool: already in progress - joining');
+      while (_refreshInFlight) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
       return stats();
     }
-    candidates.shuffle(rng);
-    final limited = candidates.take(max(target * 3, target)).toList();
+    _refreshInFlight = true;
+    try {
+      onStage?.call('fetching');
+      final candidates = await fetchFromSources();
+      if (candidates.isEmpty) {
+        onLog?.call('no proxy candidates found from sources');
+        await _persist();
+        return stats();
+      }
+      candidates.shuffle(rng);
+      final limited = candidates.take(max(target * 3, target)).toList();
 
-    onStage?.call('validating');
-    final alive = await validateProxies(limited,
-        onProgress: null, timeout: const Duration(seconds: 10));
-    final trimmed = alive.take(target).toList();
+      onStage?.call('validating');
+      final alive = await validateProxies(limited,
+          onProgress: null, timeout: const Duration(seconds: 10));
+      final trimmed = alive.take(target).toList();
 
-    // Preserve assignments for still-alive proxies.
-    final oldAssignments = {
-      for (final p in _pool.values)
-        if (p.assignedTo != null) p.key: p.assignedTo,
-    };
-    _pool
-      ..clear()
-      ..addEntries([for (final p in trimmed) MapEntry(p.key, p)]);
-    for (final entry in _pool.values) {
-      final acct = oldAssignments[entry.key];
-      entry.assignedTo = acct;
+      // Preserve assignments for still-alive proxies.
+      final oldAssignments = {
+        for (final p in _pool.values)
+          if (p.assignedTo != null) p.key: p.assignedTo,
+      };
+      _pool
+        ..clear()
+        ..addEntries([for (final p in trimmed) MapEntry(p.key, p)]);
+      for (final entry in _pool.values) {
+        final acct = oldAssignments[entry.key];
+        entry.assignedTo = acct;
+      }
+      await _persist();
+      onLog?.call('pool refreshed: ${_pool.length} alive proxies');
+      return stats();
+    } finally {
+      _refreshInFlight = false;
     }
-    await save();
-    onLog?.call('pool refreshed: ${_pool.length} alive proxies');
-    return stats();
   }
 
   /// Replace the whole pool with a freshly validated list while preserving
@@ -281,7 +333,8 @@ class ProxyEngine {
         p.assignedTo = null;
       }
     }
-    save();
+    // Serialized through the save queue - never interleaves with other saves.
+    _persist();
   }
 
   /// Release the proxy bound to [accountId] (if any).
@@ -329,6 +382,6 @@ class ProxyEngine {
       _pool.removeWhere((k, _) => !keep.contains(k));
     }
     if (_blacklistedFor.length > 5000) _blacklistedFor.clear();
-    await save();
+    await _persist();
   }
 }

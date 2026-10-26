@@ -124,6 +124,12 @@ class SibleApiClient {
       };
 
   /// Executes a request against the Sible API and unwraps the envelope.
+  ///
+  /// Resilience guarantees:
+  ///  * one transparent retry on transient transport errors (TIMEOUT /
+  ///    NETWORK_ERROR / PROXY_ERROR) with a short backoff;
+  ///  * concurrent 401s never throw spuriously - if another request is
+  ///    already refreshing the token, we wait for it and retry.
   Future<dynamic> request(
     String path, {
     String method = 'GET',
@@ -135,34 +141,56 @@ class SibleApiClient {
     var attempt = 0;
     while (true) {
       attempt++;
-      final status = await _rawRequest(path,
-          method: method, body: body, auth: auth, timeout: timeout);
-      if (status.ok) return status.envelope!.data;
-
-      final env = status.envelope!;
-      if (!env.success) {
-        final authProblem = status.httpStatus == 401 ||
-            status.httpStatus == 403 ||
-            env.errorCode == 'TOKEN_INVALID';
-        if (auth &&
-            retryOnAuthFailure &&
-            authProblem &&
-            tokens?.refreshToken != null &&
-            (tokens?.refreshToken ?? '').isNotEmpty &&
-            attempt == 1 &&
-            _refreshInFlight == 0) {
-          final refreshed = await refresh();
-          if (refreshed) continue;
+      _RawResult status;
+      try {
+        status = await _rawRequest(path,
+            method: method, body: body, auth: auth, timeout: timeout);
+      } on SibleApiException catch (e) {
+        final transient = e.code == 'TIMEOUT' ||
+            e.code == 'NETWORK_ERROR' ||
+            e.code == 'PROXY_ERROR';
+        if (transient && attempt < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+          continue;
         }
+        rethrow;
+      }
+
+      final env = status.envelope;
+      if (env != null && env.success) return env.data;
+      if (env == null) {
         throw SibleApiException(
-          env.errorCode ?? 'UNKNOWN',
-          env.errorMessage ?? 'Unknown error',
+          'BAD_RESPONSE',
+          'No envelope in response (HTTP ${status.httpStatus})',
           httpStatus: status.httpStatus,
         );
       }
+
+      final authProblem = status.httpStatus == 401 ||
+          status.httpStatus == 403 ||
+          env.errorCode == 'TOKEN_INVALID';
+      if (auth &&
+          retryOnAuthFailure &&
+          authProblem &&
+          tokens?.refreshToken != null &&
+          (tokens?.refreshToken ?? '').isNotEmpty &&
+          attempt == 1) {
+        if (_refreshInFlight > 0) {
+          // A parallel request on this client is already refreshing - wait
+          // for it (bounded) instead of failing the account spuriously.
+          var waited = 0;
+          while (_refreshInFlight > 0 && waited < 25) {
+            await Future<void>.delayed(const Duration(milliseconds: 120));
+            waited++;
+          }
+          continue; // retry with the (hopefully) refreshed token
+        }
+        final refreshed = await refresh();
+        if (refreshed) continue;
+      }
       throw SibleApiException(
-        'BAD_RESPONSE',
-        'Unexpected response shape (HTTP ${status.httpStatus})',
+        env.errorCode ?? 'UNKNOWN',
+        env.errorMessage ?? 'Unknown error',
         httpStatus: status.httpStatus,
       );
     }
@@ -195,7 +223,18 @@ class SibleApiClient {
     }
     try {
       final res = await req.close().timeout(timeout);
-      final text = await res.transform(utf8.decoder).join();
+      String text;
+      try {
+        // Body read is ALSO bounded - a stalled proxy/server that sends
+        // headers but never finishes the body must not hang the cycle forever.
+        text = await res.transform(utf8.decoder).join().timeout(timeout);
+      } on TimeoutException {
+        // Abort only this connection (not the whole client pool).
+        try {
+          res.detachSocket();
+        } catch (_) {}
+        throw SibleApiException('TIMEOUT', 'Response body timed out: $path');
+      }
       Envelope env;
       try {
         env = Envelope.parse(text, res.statusCode);

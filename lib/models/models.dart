@@ -230,7 +230,9 @@ class Account {
       };
 
   factory Account.fromJson(Map<String, dynamic> j) => Account(
-        id: j['id'] as String,
+        // Never hard-cast: a corrupt/hand-edited profile must not throw here
+        // (readProfile would silently drop the account).
+        id: '${j['id'] ?? ''}',
         email: j['email'] as String? ?? '',
         label: j['label'] as String? ?? '',
         status: accountStatusFromName(j['status'] as String?),

@@ -104,7 +104,24 @@ class MailTmService {
           req.add(payload);
         }
         final res = await req.close().timeout(const Duration(seconds: 30));
-        final text = await res.transform(utf8.decoder).join();
+        String text;
+        try {
+          // Body read is bounded too - a stalled connection must not hang
+          // the account-creation flow forever.
+          text = await res
+              .transform(utf8.decoder)
+              .join()
+              .timeout(const Duration(seconds: 30));
+        } on TimeoutException {
+          try {
+            res.detachSocket();
+          } catch (_) {}
+          if (attempt > retries) {
+            throw MailTmException('mail.tm response body timed out');
+          }
+          await Future<void>.delayed(Duration(seconds: 2 * attempt));
+          continue;
+        }
         if (res.statusCode == 429 && attempt <= retries) {
           final ra = int.tryParse(res.headers.value('retry-after') ?? '');
           await Future<void>.delayed(
@@ -121,9 +138,30 @@ class MailTmService {
               status: res.statusCode);
         }
         if (text.isEmpty) return null;
-        return jsonDecode(text);
+        try {
+          return jsonDecode(text);
+        } on FormatException {
+          // Captive portals / broken proxies can inject HTML into a 200.
+          throw MailTmException(
+              'mail.tm returned invalid JSON (HTTP ${res.statusCode})');
+        }
       } on TimeoutException {
-        if (attempt > retries) rethrow;
+        // Headers phase timed out - retry with backoff, then fail TYPED so
+        // callers' `on MailTmException` handlers always fire.
+        if (attempt > retries) {
+          throw MailTmException('mail.tm request timed out');
+        }
+        await Future<void>.delayed(Duration(seconds: 2 * attempt));
+      } on SocketException catch (e) {
+        if (attempt > retries) {
+          throw MailTmException('mail.tm network error: ${e.message}');
+        }
+        await Future<void>.delayed(Duration(seconds: 2 * attempt));
+      } on HttpException catch (e) {
+        if (attempt > retries) {
+          throw MailTmException('mail.tm connection error: ${e.message}');
+        }
+        await Future<void>.delayed(Duration(seconds: 2 * attempt));
       }
     }
   }
@@ -242,7 +280,15 @@ class MailTmService {
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
-      final msgs = await messages(box.token);
+      List<Map<String, dynamic>> msgs;
+      try {
+        msgs = await messages(box.token);
+      } on MailTmException {
+        // A single failed poll must not abort the whole OTP wait - keep
+        // trying until the deadline.
+        await Future<void>.delayed(pollEvery);
+        continue;
+      }
       // Newest first so that, with several matching emails, the latest code
       // is tried before older (already-used) ones.
       msgs.sort((x, y) {

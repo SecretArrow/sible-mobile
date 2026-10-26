@@ -57,11 +57,16 @@ class NotificationService {
   }
 
   Future<bool> requestPermission() async {
-    await init();
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    final granted = await android?.requestNotificationsPermission();
-    return granted ?? false;
+    try {
+      await init();
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      final granted = await android?.requestNotificationsPermission();
+      return granted ?? false;
+    } catch (_) {
+      // Permission is optional - a plugin hiccup must never crash startup.
+      return false;
+    }
   }
 
   Future<void> notify({

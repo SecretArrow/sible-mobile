@@ -105,6 +105,11 @@ class AppDependencies {
       proxyEngine: engine,
       notifications: NotificationService.instance,
     );
+    // Mirror automation-relevant settings so inline UI cycles behave exactly
+    // like service cycles.
+    manager
+      ..useProxies = settings.proxyEnabled
+      ..allowDirectFallback = settings.allowDirectFallback;
     // STATS: attach the earnings recorder (UI isolate).
     try {
       final stats = StatsStore(rootDir: rootDir);

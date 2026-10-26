@@ -1,4 +1,8 @@
-/// Settings: service, schedule, notifications, proxy, danger zone.
+/// Settings: service, schedule, notifications, proxy, danger zone + feature
+/// sections (InferHub AI brain, maintenance, security, smart notifications).
+///
+/// Every async handler is guarded: failures revert the UI state and show a
+/// snackbar instead of dying silently or corrupting the toggle state.
 library;
 
 import 'package:flutter/material.dart';
@@ -22,8 +26,73 @@ import 'security_settings_section.dart';
 // OPS: smart notifications (error-only, grouping, cooldown).
 import 'notification_settings_section.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late final TextEditingController _referral;
+  bool _serviceBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _referral = TextEditingController(
+        text: context.read<SettingsStore>().referralCode);
+  }
+
+  @override
+  void dispose() {
+    _referral.dispose();
+    super.dispose();
+  }
+
+  /// Runs an async action with try/catch + user feedback. Returns true on
+  /// success, false on failure - so callers never report false success.
+  Future<bool> _guard(Future<void> Function() action, {String? label}) async {
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text(label != null ? '$label gagal: $e' : 'Error: $e')),
+      );
+      return false;
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _toggleService(bool v) async {
+    if (_serviceBusy) return; // spam guard
+    _serviceBusy = true;
+    final settings = context.read<SettingsStore>();
+    try {
+      final service = await configureBackgroundService(enabled: v);
+      if (v) {
+        await service.startService();
+        await settings.setServiceEnabled(true);
+        await NotificationService.instance.requestPermission();
+      } else {
+        await settings.setServiceEnabled(false);
+        await stopBackgroundService(service);
+      }
+    } catch (e) {
+      await settings.setServiceEnabled(!v); // revert on failure
+      _toast('Gagal ${v ? 'menyalakan' : 'mematikan'} service: $e');
+    } finally {
+      _serviceBusy = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,16 +123,8 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: _s(
                     'Foreground worker keeps cycles running, even after reboot'),
                 value: settings.serviceEnabled,
-                onChanged: (v) async {
-                  await settings.setServiceEnabled(v);
-                  final service = await configureBackgroundService(enabled: v);
-                  if (v) {
-                    await service.startService();
-                    await NotificationService.instance.requestPermission();
-                  } else {
-                    await stopBackgroundService(service);
-                  }
-                },
+                onChanged: (v) => _guard(() => _toggleService(v),
+                    label: 'Background service'),
               ),
               ListTile(
                 title: _t('Check interval'),
@@ -75,8 +136,9 @@ class SettingsScreen extends StatelessWidget {
                     ButtonSegment(value: 15, label: Text('15m')),
                   ],
                   selected: {settings.intervalMinutes},
-                  onSelectionChanged: (s) =>
-                      settings.setIntervalMinutes(s.first),
+                  onSelectionChanged: (s) => _guard(
+                      () => settings.setIntervalMinutes(s.first),
+                      label: 'Interval'),
                 ),
               ),
               ListTile(
@@ -104,25 +166,31 @@ class SettingsScreen extends StatelessWidget {
                 title: _t('Cycle summary'),
                 subtitle: _s('One aggregated notification per cycle'),
                 value: settings.notifyCycleSummary,
-                onChanged: (v) => settings.setNotifyCycleSummary(v),
+                onChanged: (v) =>
+                    _guard(() => settings.setNotifyCycleSummary(v),
+                        label: 'Notifikasi'),
               ),
               SwitchListTile(
                 title: _t('Alerts'),
                 subtitle: _s('Bans, login failures, proxy exhaustion'),
                 value: settings.notifyAlerts,
-                onChanged: (v) async {
+                onChanged: (v) => _guard(() async {
                   await settings.setNotifyAlerts(v);
                   if (v) await NotificationService.instance.requestPermission();
-                },
+                }, label: 'Alerts'),
               ),
               ListTile(
                 title: _t('Grant notification permission'),
                 subtitle: _s('Required on Android 13+'),
                 trailing: OutlinedButton(
-                  onPressed: () async {
-                    await NotificationService.instance.requestPermission();
+                  onPressed: () => _guard(() async {
+                    final granted = await NotificationService.instance
+                        .requestPermission();
                     await Permission.notification.request();
-                  },
+                    _toast(granted
+                        ? 'Notifikasi diizinkan'
+                        : 'Izin diminta - cek pengaturan sistem');
+                  }, label: 'Izin notifikasi'),
                   child: const Text('Request'),
                 ),
               ),
@@ -130,9 +198,13 @@ class SettingsScreen extends StatelessWidget {
                 title: _t('Disable battery optimization'),
                 subtitle: _s('Prevents Android from killing the worker'),
                 trailing: OutlinedButton(
-                  onPressed: () async {
-                    await Permission.ignoreBatteryOptimizations.request();
-                  },
+                  onPressed: () => _guard(() async {
+                    final status =
+                        await Permission.ignoreBatteryOptimizations.request();
+                    _toast(status.isGranted
+                        ? 'Battery optimization dinonaktifkan'
+                        : 'Permintaan ditolak/dibatalkan');
+                  }, label: 'Battery optimization'),
                   child: const Text('Allow'),
                 ),
               ),
@@ -145,7 +217,17 @@ class SettingsScreen extends StatelessWidget {
                 title: _t('Use proxies'),
                 subtitle: _s('Auto-fetch free proxies, unique per account'),
                 value: settings.proxyEnabled,
-                onChanged: (v) => settings.setProxyEnabled(v),
+                onChanged: (v) =>
+                    _guard(() => settings.setProxyEnabled(v), label: 'Proxy'),
+              ),
+              SwitchListTile(
+                title: _t('Direct fallback'),
+                subtitle: _s(
+                    'Use the device IP when no healthy proxy is available'),
+                value: settings.allowDirectFallback,
+                onChanged: (v) =>
+                    _guard(() => settings.setAllowDirectFallback(v),
+                        label: 'Direct fallback'),
               ),
               ListTile(
                 title: _t('Pool target'),
@@ -204,11 +286,12 @@ class SettingsScreen extends StatelessWidget {
                 trailing: SizedBox(
                   width: 140,
                   child: TextField(
-                    controller:
-                        TextEditingController(text: settings.referralCode),
+                    controller: _referral,
                     decoration:
                         const InputDecoration(hintText: 'code', isDense: true),
-                    onSubmitted: (v) => settings.setReferralCode(v.trim()),
+                    onSubmitted: (v) => _guard(
+                        () => settings.setReferralCode(v.trim()),
+                        label: 'Referral'),
                   ),
                 ),
               ),
@@ -247,14 +330,16 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     );
                     if (ok == true) {
-                      await deps.store.wipeAll();
-                      await deps.proxyEngine.prune(keepTop: 0);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('All data wiped. Restart the app.')),
-                        );
+                      final wiped = await _guard(() async {
+                        await deps.store.wipeAll();
+                        await deps.proxyEngine.prune(keepTop: 0);
+                        // Also clear in-memory state so the wipe is real even
+                        // before restart (accounts, logs, counters).
+                        deps.accountManager.accounts.clear();
+                        deps.accountManager.notifyListeners();
+                      }, label: 'Wipe');
+                      if (wiped) {
+                        _toast('All data wiped. Restart the app.');
                       }
                     }
                   },

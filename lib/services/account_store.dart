@@ -20,6 +20,10 @@ class AccountStore {
   final FlutterSecureStorage secure;
   final void Function(String message)? onLog;
 
+  /// Serializes ring-log writes per instance so 6 parallel cycle workers
+  /// can never interleave read-modify-write on the same file.
+  Future<void> _logQueue = Future.value();
+
   AccountStore(
       {required this.rootDir, FlutterSecureStorage? secure, this.onLog})
       : secure = secure ??
@@ -69,9 +73,21 @@ class AccountStore {
   }
 
   Future<void> writeProfile(Account a) async {
+    // Atomic write (tmp + rename): a process kill mid-write can never leave
+    // a truncated profile.json behind (which would silently drop the account).
     final f = profileOf(a.id);
     await f.parent.create(recursive: true);
-    await f.writeAsString(jsonEncode(a.toJson()), flush: true);
+    final payload = jsonEncode(a.toJson());
+    final tmp = File('${f.path}.tmp');
+    await tmp.writeAsString(payload, flush: true);
+    try {
+      await tmp.rename(f.path);
+    } catch (_) {
+      await f.writeAsString(payload, flush: true);
+      try {
+        await tmp.delete();
+      } catch (_) {}
+    }
   }
 
   Future<bool> deleteAccount(String id) async {
@@ -102,18 +118,29 @@ class AccountStore {
     }
   }
 
-  Future<void> writeSecrets(String id, AccountSecrets s) =>
-      secure.write(key: secretKey(id), value: jsonEncode(s.toJson()));
+  Future<void> writeSecrets(String id, AccountSecrets s) async {
+    try {
+      await secure.write(key: secretKey(id), value: jsonEncode(s.toJson()));
+    } catch (e) {
+      onLog?.call('secrets write failed for $id: $e');
+      rethrow;
+    }
+  }
 
   // --------------------------------------------------------------------------
   // Logs (ring files)
   // --------------------------------------------------------------------------
 
   Future<void> appendAccountLog(String id, LogEvent ev) =>
-      _appendRing(logOf(id), ev, Limits.logRingSize);
+      _queueRing(_appendRing(logOf(id), ev, Limits.logRingSize));
 
   Future<void> appendGlobalLog(LogEvent ev) =>
-      _appendRing(globalLog, ev, Limits.globalLogRingSize);
+      _queueRing(_appendRing(globalLog, ev, Limits.globalLogRingSize));
+
+  Future<void> _queueRing(Future<void> op) {
+    _logQueue = _logQueue.then((_) => op);
+    return _logQueue;
+  }
 
   Future<void> _appendRing(File f, LogEvent ev, int cap) async {
     try {
@@ -126,7 +153,16 @@ class AccountStore {
       while (lines.length > cap) {
         lines.removeAt(0);
       }
-      await f.writeAsString('${lines.join('\n')}\n', flush: true);
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString('${lines.join('\n')}\n', flush: true);
+      try {
+        await tmp.rename(f.path);
+      } catch (_) {
+        await f.writeAsString('${lines.join('\n')}\n', flush: true);
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 
@@ -155,10 +191,35 @@ class AccountStore {
     }
   }
 
-  /// Wipe everything (danger zone).
+  /// Wipe everything (danger zone): profiles, logs, proxy pool AND every
+  /// secret stored in secure storage. Fails soft per item so a locked file
+  /// cannot leave the wipe half-done without any feedback.
   Future<void> wipeAll() async {
-    if (await accountsDir.exists()) await accountsDir.delete(recursive: true);
-    if (await globalLog.exists()) await globalLog.delete();
-    if (await proxyPoolFile.exists()) await proxyPoolFile.delete();
+    // 1) Secrets first (most sensitive) - delete per known account id.
+    try {
+      final ids = await listAccountIds();
+      for (final id in ids) {
+        try {
+          await secure.delete(key: secretKey(id));
+        } catch (_) {}
+      }
+    } catch (_) {}
+    try {
+      if (await accountsDir.exists()) {
+        await accountsDir.delete(recursive: true);
+      }
+    } catch (e) {
+      onLog?.call('wipe accounts dir failed: $e');
+    }
+    try {
+      if (await globalLog.exists()) await globalLog.delete();
+    } catch (e) {
+      onLog?.call('wipe global log failed: $e');
+    }
+    try {
+      if (await proxyPoolFile.exists()) await proxyPoolFile.delete();
+    } catch (e) {
+      onLog?.call('wipe proxy pool failed: $e');
+    }
   }
 }

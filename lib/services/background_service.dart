@@ -90,9 +90,13 @@ Future<void> onServiceStart(ServiceInstance service) async {
   }
 
   Future<int> intervalMinutes() async {
-    final prefs = await SharedPreferences.getInstance();
-    final v = prefs.getInt('settings.intervalMinutes') ?? 5;
-    return v < 1 ? 5 : v;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getInt('settings.intervalMinutes') ?? 5;
+      return v < 1 ? 5 : v;
+    } catch (_) {
+      return 5; // corrupted/mismatched prefs must never kill the loop
+    }
   }
 
   Future<void> updateServiceNotification(String text) async {
@@ -108,18 +112,28 @@ Future<void> onServiceStart(ServiceInstance service) async {
     if (cycleInFlight || stopping) return;
     cycleInFlight = true;
     cycleCount++;
-    final manager = await buildManager();
+    AccountManager? manager;
     try {
+      // buildManager() is INSIDE the try: a plugin/path_provider hiccup must
+      // never leave cycleInFlight latched true (permanent silent deadlock).
+      manager = await buildManager();
       final prefs = await SharedPreferences.getInstance();
       final concurrency = prefs.getInt('settings.cycleConcurrency') ?? 6;
       final notifySummary =
           prefs.getBool('settings.notifyCycleSummary') ?? true;
+      // Mirror automation-relevant settings into the manager (previously
+      // these toggles existed in the UI but were silently ignored).
+      manager.useProxies = prefs.getBool('settings.proxyEnabled') ?? true;
+      manager.allowDirectFallback =
+          prefs.getBool('settings.allowDirectFallback') ?? false;
+      final notifyAlerts = prefs.getBool('settings.notifyAlerts') ?? true;
 
       await manager.loadAll();
       await updateServiceNotification(
           'Running cycle #$cycleCount - ${manager.activeAccounts.length} accounts...');
       final summary = await manager.runAllCycles(
         concurrency: concurrency,
+        notifyAlerts: notifyAlerts,
         notifySummary: notifySummary,
       );
       final nextMin = await intervalMinutes();
@@ -138,18 +152,31 @@ Future<void> onServiceStart(ServiceInstance service) async {
       });
     } catch (e) {
       debugPrint('[service] cycle error: $e');
-      await updateServiceNotification('Cycle error: $e');
+      try {
+        await updateServiceNotification('Cycle error: $e');
+      } catch (_) {}
       service.invoke(serviceCycleDoneEvent, {
         'error': '$e',
         'nextCycleAt':
             DateTime.now().add(const Duration(minutes: 5)).toIso8601String(),
       });
     } finally {
-      cycleInFlight = false;
+      // Release every HttpClient the manager owned (prevents fd exhaustion
+      // across hours of background cycles).
+      try {
+        await manager?.dispose();
+      } catch (_) {}
+      cycleInFlight = false; // ALWAYS reset - deadlock-proof
     }
   }
 
-  service.on(serviceRunNowEvent).listen((_) => runCycleNow());
+  service.on(serviceRunNowEvent).listen((_) {
+    // Bulletproof: runCycleNow is fully try/finally guarded internally.
+    runCycleNow().catchError((e, st) {
+      debugPrint('[service] run-now event error: $e');
+      cycleInFlight = false;
+    });
+  });
   service.on(serviceStopEvent).listen((_) {
     stopping = true;
     service.stopSelf();
@@ -165,13 +192,31 @@ Future<void> onServiceStart(ServiceInstance service) async {
   } catch (e) {
     debugPrint('[service] stats attach failed: $e');
   }
-  // Main loop: sequential non-overlapping cycles with a fresh interval read.
+  // Main loop: sequential non-overlapping cycles. The WHOLE body is guarded
+  // so that no exception - from any source - can kill the cron silently
+  // while the foreground notification keeps showing "running".
   while (!stopping) {
-    await runCycleNow();
-    final minutes = await intervalMinutes();
-    final deadline = DateTime.now().add(Duration(minutes: minutes));
-    while (DateTime.now().isBefore(deadline) && !stopping) {
-      await Future<void>.delayed(const Duration(seconds: 20));
+    try {
+      await runCycleNow();
+    } catch (e, st) {
+      debugPrint('[service] loop cycle error: $e\n$st');
+      cycleInFlight = false;
+      try {
+        await updateServiceNotification('Worker error - retrying soon');
+      } catch (_) {}
+    }
+    try {
+      final minutes = await intervalMinutes();
+      final deadline = DateTime.now().add(Duration(minutes: minutes));
+      while (DateTime.now().isBefore(deadline) && !stopping) {
+        await Future<void>.delayed(const Duration(seconds: 20));
+      }
+    } catch (e) {
+      debugPrint('[service] wait error: $e');
+      // Fallback sleep so we never spin-hot on repeated failures.
+      try {
+        await Future<void>.delayed(const Duration(minutes: 1));
+      } catch (_) {}
     }
   }
 }

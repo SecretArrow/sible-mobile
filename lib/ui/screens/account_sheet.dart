@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
+import '../../models/models.dart';
 import '../../services/account_manager.dart';
 import '../../state/providers.dart';
 import '../widgets/common.dart';
@@ -28,6 +29,7 @@ class AccountDetailSheet extends StatefulWidget {
 
 class _AccountDetailSheetState extends State<AccountDetailSheet> {
   List<LogEvent> _logs = const [];
+  bool _cycleBusy = false;
 
   @override
   void initState() {
@@ -39,6 +41,20 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
     final deps = context.read<AppDependencies>();
     final logs = await deps.store.readAccountLog(widget.accountId, tail: 40);
     if (mounted) setState(() => _logs = logs);
+  }
+
+  /// Persists the account with try/catch + user feedback - a disk failure
+  /// must never surface as a silent unhandled async error.
+  Future<void> _saveAcc(AccountManager mgr, Account acc) async {
+    try {
+      await mgr.saveAccount(acc);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -172,7 +188,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                         value: acc.enabled,
                         onChanged: (v) async {
                           acc.enabled = v;
-                          await mgr.saveAccount(acc);
+                          await _saveAcc(mgr, acc);
                         },
                       ),
                       const Divider(height: 1, indent: 16, endIndent: 16),
@@ -182,7 +198,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                         value: acc.autoAccelerate,
                         onChanged: (v) async {
                           acc.autoAccelerate = v;
-                          await mgr.saveAccount(acc);
+                          await _saveAcc(mgr, acc);
                         },
                       ),
                       if (acc.autoAccelerate)
@@ -197,7 +213,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                             selected: {acc.accelerateTargetPct},
                             onSelectionChanged: (s) async {
                               acc.accelerateTargetPct = s.first;
-                              await mgr.saveAccount(acc);
+                              await _saveAcc(mgr, acc);
                             },
                           ),
                         ),
@@ -208,7 +224,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                         value: acc.autoExtension,
                         onChanged: (v) async {
                           acc.autoExtension = v;
-                          await mgr.saveAccount(acc);
+                          await _saveAcc(mgr, acc);
                         },
                       ),
                       const Divider(height: 1, indent: 16, endIndent: 16),
@@ -218,7 +234,7 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                         value: acc.autoClaimTasks,
                         onChanged: (v) async {
                           acc.autoClaimTasks = v;
-                          await mgr.saveAccount(acc);
+                          await _saveAcc(mgr, acc);
                         },
                       ),
                     ],
@@ -247,15 +263,23 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                     ),
                     trailing: TextButton(
                       onPressed: () async {
-                        await mgr.proxyEngine.release(acc.id);
-                        acc.proxyKey = null;
-                        await mgr.saveAccount(acc);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text(
-                                    'Proxy released - will re-assign next cycle')),
-                          );
+                        try {
+                          await mgr.proxyEngine.release(acc.id);
+                          acc.proxyKey = null;
+                          await mgr.saveAccount(acc);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Proxy released - will re-assign next cycle')),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Gagal release proxy: $e')),
+                            );
+                          }
                         }
                       },
                       child: const Text('Reassign'),
@@ -271,22 +295,39 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: mgr.cycleRunning
+                        // The real per-account busy state (cycleRunning is
+                        // only set by runAllCycles) + a local busy flag.
+                        onPressed: (_cycleBusy || mgr.cycleRunning)
                             ? null
                             : () async {
-                                final ok = await mgr.runCycle(acc);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(ok
-                                            ? 'Cycle finished OK'
-                                            : 'Cycle finished with errors')),
-                                  );
+                                setState(() => _cycleBusy = true);
+                                try {
+                                  final ok = await mgr.runCycle(acc);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(ok
+                                              ? 'Cycle finished OK'
+                                              : 'Cycle finished with errors')),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content:
+                                              Text('Cycle gagal: $e')),
+                                    );
+                                  }
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _cycleBusy = false);
+                                  }
                                 }
                                 await _loadLogs();
                               },
                         icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                        label: const Text('Run cycle'),
+                        label: Text(_cycleBusy ? 'Running...' : 'Run cycle'),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -310,8 +351,17 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                             ),
                           );
                           if (confirmed == true && context.mounted) {
-                            await mgr.removeAccount(acc.id);
-                            if (context.mounted) Navigator.pop(context);
+                            try {
+                              await mgr.removeAccount(acc.id);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text('Gagal menghapus: $e')),
+                                );
+                              }
+                            }
                           }
                         },
                         style: OutlinedButton.styleFrom(

@@ -262,8 +262,20 @@ class AccountTile extends StatelessWidget {
                         child: Switch(
                           value: account.enabled,
                           onChanged: (v) async {
-                            account.enabled = v;
-                            await mgr.saveAccount(account);
+                            try {
+                              await mgr.saveAccount(account..enabled = v);
+                            } catch (e) {
+                              // Revert on disk failure + tell the user.
+                              try {
+                                await mgr.saveAccount(account..enabled = !v);
+                              } catch (_) {}
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text('Gagal menyimpan: $e')),
+                                );
+                              }
+                            }
                           },
                         ),
                       ),
