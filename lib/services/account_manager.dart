@@ -489,8 +489,7 @@ class AccountManager extends ChangeNotifier {
         _logFor(a, LogLevel.error, 'auth', 'ACCOUNT BANNED');
         // OPS: banned alerts always pass the smart-notification gate.
         if (notifyAlerts &&
-            await _notifAllowed('alert', a.id,
-                isError: true, isClaim: false)) {
+            await _notifAllowed('alert', a.id, isError: true, isClaim: false)) {
           await notifications.notifyAlert(
               title: 'Sible Miner - banned',
               body: '${a.displayName} has been banned.');

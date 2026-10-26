@@ -60,8 +60,7 @@ void main() {
     });
 
     test('marks explicit free flag as free', () {
-      final m =
-          InferHubModel.fromJson(const {'id': 'x/y', 'free': true});
+      final m = InferHubModel.fromJson(const {'id': 'x/y', 'free': true});
       expect(m.free, isTrue);
     });
 
@@ -170,12 +169,16 @@ void main() {
     });
 
     test('snaps out-of-range values to the nearest allowed slot', () {
-      expect(AiAccelerationPlan.fromLlmText('{"targetPercent": 5}')
-          .targetPercent, 20);
-      expect(AiAccelerationPlan.fromLlmText('{"targetPercent": 100}')
-          .targetPercent, 60);
-      expect(AiAccelerationPlan.fromLlmText('{"targetPercent": 50}')
-          .targetPercent, 40);
+      expect(
+          AiAccelerationPlan.fromLlmText('{"targetPercent": 5}').targetPercent,
+          20);
+      expect(
+          AiAccelerationPlan.fromLlmText('{"targetPercent": 100}')
+              .targetPercent,
+          60);
+      expect(
+          AiAccelerationPlan.fromLlmText('{"targetPercent": 50}').targetPercent,
+          40);
     });
 
     test('missing percent falls back to 60', () {
@@ -184,8 +187,7 @@ void main() {
     });
 
     test('non-numeric percent falls back to 60', () {
-      final plan =
-          AiAccelerationPlan.fromLlmText('{"targetPercent": "fast"}');
+      final plan = AiAccelerationPlan.fromLlmText('{"targetPercent": "fast"}');
       expect(plan.targetPercent, 60);
     });
 
@@ -230,8 +232,7 @@ void main() {
 
   group('parseExtensionIdsFromLlm', () {
     test('parses a clean array with dedupe', () {
-      final ids =
-          parseExtensionIdsFromLlm('["a", "b", "a", "c", "d"]');
+      final ids = parseExtensionIdsFromLlm('["a", "b", "a", "c", "d"]');
       expect(ids, ['a', 'b', 'c']);
     });
 
@@ -251,8 +252,7 @@ void main() {
     });
 
     test('garbage input throws FormatException', () {
-      expect(() => parseExtensionIdsFromLlm('no array'),
-          throwsFormatException);
+      expect(() => parseExtensionIdsFromLlm('no array'), throwsFormatException);
     });
 
     test('non-array JSON throws FormatException', () {

@@ -39,8 +39,10 @@ const Map<String, Map<String, String>> opsStrings = {
     'id': 'Notifikasi pintar',
   },
   'notif.smartHint': {
-    'en': 'Group per account and notify only on errors/claims instead of every cycle.',
-    'id': 'Kelompokkan per akun dan beri notifikasi hanya saat galat/klaim, bukan tiap siklus.',
+    'en':
+        'Group per account and notify only on errors/claims instead of every cycle.',
+    'id':
+        'Kelompokkan per akun dan beri notifikasi hanya saat galat/klaim, bukan tiap siklus.',
   },
   'notif.errorOnly': {
     'en': 'Alerts only (errors & claims)',
@@ -71,7 +73,8 @@ const Map<String, Map<String, String>> opsStrings = {
     'id': 'Paksa proksi manual',
   },
   'proxy.overrideHint': {
-    'en': 'Force this proxy for the selected account instead of using the pool.',
+    'en':
+        'Force this proxy for the selected account instead of using the pool.',
     'id': 'Paksa proksi ini untuk akun terpilih, menggantikan pool.',
   },
   'proxy.overrideEnabled': {

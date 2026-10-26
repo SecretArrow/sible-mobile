@@ -22,8 +22,7 @@ enum AppLang { en, id }
 
 extension AppLangX on AppLang {
   String get code => this == AppLang.en ? 'en' : 'id';
-  String get label =>
-      this == AppLang.en ? 'English' : 'Bahasa Indonesia';
+  String get label => this == AppLang.en ? 'English' : 'Bahasa Indonesia';
 
   static AppLang fromCode(String? code) =>
       code == 'id' ? AppLang.id : AppLang.en;
@@ -58,7 +57,10 @@ const Map<String, Map<String, String>> coreStrings = {
   'common.version': {'en': 'Version', 'id': 'Versi'},
   'common.language': {'en': 'Language', 'id': 'Bahasa'},
   'common.copy': {'en': 'Copy', 'id': 'Salin'},
-  'common.copied': {'en': 'Copied to clipboard', 'id': 'Tersalin ke papan klip'},
+  'common.copied': {
+    'en': 'Copied to clipboard',
+    'id': 'Tersalin ke papan klip'
+  },
   'common.empty': {'en': 'Nothing here yet', 'id': 'Belum ada data'},
   'common.test': {'en': 'Test', 'id': 'Tes'},
   'common.apply': {'en': 'Apply', 'id': 'Terapkan'},
@@ -101,8 +103,7 @@ const Map<String, Map<String, String>> kAppStrings = {
 class LocaleController extends ChangeNotifier {
   LocaleController(AppLang initial) : _lang = initial;
 
-  static final LocaleController instance =
-      LocaleController(AppLang.en);
+  static final LocaleController instance = LocaleController(AppLang.en);
 
   AppLang _lang = AppLang.en;
   AppLang get lang => _lang;
@@ -130,14 +131,12 @@ class I18nScope extends InheritedWidget {
   });
 
   static AppLang langOf(BuildContext context) {
-    final scope =
-        context.getInheritedWidgetOfExactType<I18nScope>();
+    final scope = context.getInheritedWidgetOfExactType<I18nScope>();
     return scope?.lang ?? LocaleController.instance.lang;
   }
 
   @override
-  bool updateShouldNotify(I18nScope oldWidget) =>
-      oldWidget.lang != lang;
+  bool updateShouldNotify(I18nScope oldWidget) => oldWidget.lang != lang;
 }
 
 /// Translate [key] in the active locale (falls back to English, then key).

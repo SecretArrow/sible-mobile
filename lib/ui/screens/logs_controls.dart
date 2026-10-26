@@ -69,8 +69,7 @@ class _LogsFilterBarState extends State<LogsFilterBar> {
               widget.state.setTextQuery(v);
               if (mounted) setState(() {});
             },
-            style: const TextStyle(
-                color: SibleTheme.textPrimary, fontSize: 13),
+            style: const TextStyle(color: SibleTheme.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
               hintText: t(context, 'logs.filterText'),
@@ -92,8 +91,8 @@ class _LogsFilterBarState extends State<LogsFilterBar> {
                     ),
               filled: true,
               fillColor: SibleTheme.surface,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: const BorderSide(color: SibleTheme.border),
@@ -176,8 +175,8 @@ class _AccountChip extends StatelessWidget {
           value: '',
           child: Text(
             t(context, 'common.all'),
-            style: const TextStyle(
-                color: SibleTheme.textPrimary, fontSize: 12.5),
+            style:
+                const TextStyle(color: SibleTheme.textPrimary, fontSize: 12.5),
           ),
         ),
         ...options.map(

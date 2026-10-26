@@ -176,8 +176,7 @@ class ModelPage {
         filtered.isEmpty ? 1 : (filtered.length + size - 1) ~/ size;
     var p = page < 0 ? 0 : page;
     if (p >= totalPages) p = totalPages - 1;
-    final models =
-        filtered.skip(p * size).take(size).toList(growable: false);
+    final models = filtered.skip(p * size).take(size).toList(growable: false);
     return ModelPage(
       models: models,
       page: p,
@@ -306,8 +305,8 @@ class InferHubConfig {
       freeOnly: asBool(raw['freeOnly']),
       taskSolver: raw['taskSolver'] != false && raw['taskSolver'] != 'false',
       planner: raw['planner'] != false && raw['planner'] != 'false',
-      extensionPicker: raw['extensionPicker'] != false &&
-          raw['extensionPicker'] != 'false',
+      extensionPicker:
+          raw['extensionPicker'] != false && raw['extensionPicker'] != 'false',
       temperature: temperature.toDouble(),
       maxTokens: asInt(raw['maxTokens'], 512).clamp(1, 100000).toInt(),
       maxInputPrice: asDouble(raw['maxInputPrice'], 0),

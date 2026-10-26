@@ -14,8 +14,10 @@ const Map<String, Map<String, String>> inferhubStrings = {
     'id': 'Aktifkan InferHub AI',
   },
   'inferhub.enableHint': {
-    'en': 'Use InferHub LLM to solve reward tasks, plan accelerations and pick extensions automatically.',
-    'id': 'Gunakan LLM InferHub untuk menyelesaikan reward task, merencanakan akselerasi, dan memilih extension secara otomatis.',
+    'en':
+        'Use InferHub LLM to solve reward tasks, plan accelerations and pick extensions automatically.',
+    'id':
+        'Gunakan LLM InferHub untuk menyelesaikan reward task, merencanakan akselerasi, dan memilih extension secara otomatis.',
   },
   'inferhub.apiKey': {'en': 'API key', 'id': 'Kunci API'},
   'inferhub.apiKeyHint': {
@@ -42,14 +44,17 @@ const Map<String, Map<String, String>> inferhubStrings = {
   },
   'inferhub.advanced': {'en': 'Advanced options', 'id': 'Opsi lanjutan'},
   'inferhub.temperature': {'en': 'Temperature', 'id': 'Temperature'},
-  'inferhub.maxTokens': {'en': 'Max output tokens', 'id': 'Maks token keluaran'},
+  'inferhub.maxTokens': {
+    'en': 'Max output tokens',
+    'id': 'Maks token keluaran'
+  },
   'inferhub.maxInputPrice': {
-    'en': 'Max input price ($/Mtok, 0 = no cap)',
-    'id': 'Harga input maks ($/Mtok, 0 = tanpa batas)',
+    'en': 'Max input price (\$/Mtok, 0 = no cap)',
+    'id': 'Harga input maks (\$/Mtok, 0 = tanpa batas)',
   },
   'inferhub.maxOutputPrice': {
-    'en': 'Max output price ($/Mtok, 0 = no cap)',
-    'id': 'Harga output maks ($/Mtok, 0 = tanpa batas)',
+    'en': 'Max output price (\$/Mtok, 0 = no cap)',
+    'id': 'Harga output maks (\$/Mtok, 0 = tanpa batas)',
   },
   'inferhub.timeout': {
     'en': 'Request timeout (seconds)',

@@ -186,9 +186,8 @@ class _SecuritySettingsSectionState extends State<SecuritySettingsSection> {
                         context,
                         _batteryOk ? 'battery.statusOk' : 'battery.statusBad',
                       ),
-                      color: _batteryOk
-                          ? SibleTheme.success
-                          : SibleTheme.warning,
+                      color:
+                          _batteryOk ? SibleTheme.success : SibleTheme.warning,
                     ),
                   ],
                 )

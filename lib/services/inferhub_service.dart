@@ -391,8 +391,7 @@ class InferHubService implements InferHubGateway {
     }
   }
 
-  InferHubException _fromStatus(
-      int status, String body, HttpHeaders? headers) {
+  InferHubException _fromStatus(int status, String body, HttpHeaders? headers) {
     var code = 'HTTP_$status';
     var message = 'HTTP $status';
     int? retryAfterMs;

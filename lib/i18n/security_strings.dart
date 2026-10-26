@@ -8,8 +8,10 @@ const Map<String, Map<String, String>> securityStrings = {
     'id': 'Tetap hidup (anti-kill)',
   },
   'battery.hint': {
-    'en': 'Vendors like Xiaomi, Huawei, Samsung and Oppo/Realme kill background services aggressively. Whitelist the app so mining keeps running.',
-    'id': 'Vendor seperti Xiaomi, Huawei, Samsung, dan Oppo/Realme mematikan layanan latar belakang secara agresif. Whitelist aplikasi agar mining tetap berjalan.',
+    'en':
+        'Vendors like Xiaomi, Huawei, Samsung and Oppo/Realme kill background services aggressively. Whitelist the app so mining keeps running.',
+    'id':
+        'Vendor seperti Xiaomi, Huawei, Samsung, dan Oppo/Realme mematikan layanan latar belakang secara agresif. Whitelist aplikasi agar mining tetap berjalan.',
   },
   'battery.statusOk': {
     'en': 'Battery optimization: IGNORED (good)',
@@ -28,24 +30,34 @@ const Map<String, Map<String, String>> securityStrings = {
     'id': 'Pengaturan khusus vendor',
   },
   'battery.vendorGeneric': {
-    'en': 'Settings → Battery → Unrestricted / Don\'t optimize for Sible Miner.',
-    'id': 'Pengaturan → Baterai → Tanpa batasan / Jangan optimalkan untuk Sible Miner.',
+    'en':
+        'Settings → Battery → Unrestricted / Don\'t optimize for Sible Miner.',
+    'id':
+        'Pengaturan → Baterai → Tanpa batasan / Jangan optimalkan untuk Sible Miner.',
   },
   'battery.vendorXiaomi': {
-    'en': 'Xiaomi/Redmi/POCO: Security app → App details → Battery saver → No restrictions, AND enable Autostart.',
-    'id': 'Xiaomi/Redmi/POCO: Aplikasi Keamanan → Detail app → Penghemat baterai → Tanpa batasan, lalu aktifkan Autostart.',
+    'en':
+        'Xiaomi/Redmi/POCO: Security app → App details → Battery saver → No restrictions, AND enable Autostart.',
+    'id':
+        'Xiaomi/Redmi/POCO: Aplikasi Keamanan → Detail app → Penghemat baterai → Tanpa batasan, lalu aktifkan Autostart.',
   },
   'battery.vendorHuawei': {
-    'en': 'Huawei/Honor: Settings → Battery → App launch → Manage manually → enable all three toggles.',
-    'id': 'Huawei/Honor: Pengaturan → Baterai → Peluncuran app → Kelola manual → aktifkan ketiga saklar.',
+    'en':
+        'Huawei/Honor: Settings → Battery → App launch → Manage manually → enable all three toggles.',
+    'id':
+        'Huawei/Honor: Pengaturan → Baterai → Peluncuran app → Kelola manual → aktifkan ketiga saklar.',
   },
   'battery.vendorSamsung': {
-    'en': 'Samsung: Settings → Battery → Background usage limits → Remove Sible Miner from Sleeping apps; never "Put unused apps to sleep".',
-    'id': 'Samsung: Pengaturan → Baterai → Batas pemakaian latar → keluarkan Sible Miner dari Sleeping apps.',
+    'en':
+        'Samsung: Settings → Battery → Background usage limits → Remove Sible Miner from Sleeping apps; never "Put unused apps to sleep".',
+    'id':
+        'Samsung: Pengaturan → Baterai → Batas pemakaian latar → keluarkan Sible Miner dari Sleeping apps.',
   },
   'battery.vendorOppo': {
-    'en': 'Oppo/Realme/OnePlus: Settings → Battery → More settings → Optimize battery use → Sible Miner → Don\'t optimize; enable "Allow auto-start".',
-    'id': 'Oppo/Realme/OnePlus: Pengaturan → Baterai → Setelan lainnya → Optimalkan baterai → Sible Miner → Jangan optimalkan; aktifkan "Izinkan auto-start".',
+    'en':
+        'Oppo/Realme/OnePlus: Settings → Battery → More settings → Optimize battery use → Sible Miner → Don\'t optimize; enable "Allow auto-start".',
+    'id':
+        'Oppo/Realme/OnePlus: Pengaturan → Baterai → Setelan lainnya → Optimalkan baterai → Sible Miner → Jangan optimalkan; aktifkan "Izinkan auto-start".',
   },
   'battery.bootStart': {
     'en': 'Restart service after phone reboot',

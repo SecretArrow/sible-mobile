@@ -59,8 +59,7 @@ class _SibleMinerAppState extends State<SibleMinerApp> {
             theme: SibleTheme.dark(),
             // SECURITY: biometric lock gate wraps every route.
             builder: (context, child) => LockGate(
-              child:
-                  child ?? const SizedBox.shrink(),
+              child: child ?? const SizedBox.shrink(),
             ),
             home: const HomeShell(),
           ),

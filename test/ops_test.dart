@@ -28,8 +28,8 @@ const List<LogRow> _rows = [
       account: 'Miner 2',
       level: 'warn',
       message: 'start: SLOT_ALREADY_USED'),
-  LogRow(at: 't4', account: 'Miner 2', level: 'error',
-      message: 'ACCOUNT BANNED'),
+  LogRow(
+      at: 't4', account: 'Miner 2', level: 'error', message: 'ACCOUNT BANNED'),
 ];
 
 LogsFilterState _state({
@@ -99,15 +99,14 @@ void main() {
     });
 
     test('warn and error buckets match exactly', () {
-      expect(_apply(_state(level: LogLevelFilter.warn)).map((r) => r.at),
-          ['t3']);
-      expect(_apply(_state(level: LogLevelFilter.error)).map((r) => r.at),
-          ['t4']);
+      expect(
+          _apply(_state(level: LogLevelFilter.warn)).map((r) => r.at), ['t3']);
+      expect(
+          _apply(_state(level: LogLevelFilter.error)).map((r) => r.at), ['t4']);
     });
 
     test('account filter narrows to one account', () {
-      expect(_apply(_state(account: 'Miner 1')).map((r) => r.at),
-          ['t1', 't2']);
+      expect(_apply(_state(account: 'Miner 1')).map((r) => r.at), ['t1', 't2']);
     });
 
     test('text query is case-insensitive on the message', () {
@@ -167,10 +166,7 @@ void main() {
       final csv = logsToCsv(const [
         LogRow(at: 't1', account: 'Miner 1', level: 'info', message: 'ok'),
         LogRow(
-            at: 't2',
-            account: 'Miner 2',
-            level: 'error',
-            message: 'a,"b"\nc'),
+            at: 't2', account: 'Miner 2', level: 'error', message: 'a,"b"\nc'),
       ]);
       // The embedded newline lives inside a quoted field, so splitting the
       // raw document still yields 4 physical lines.
@@ -237,20 +233,20 @@ void main() {
 
     test('claims pass even with errorOnly on', () {
       final d1 = _decide(
-          errorOnly: true, kind: 'claim', last: {'claim|a1': 1000},
+          errorOnly: true,
+          kind: 'claim',
+          last: {'claim|a1': 1000},
           nowMillis: 1000 + 5 * min);
       expect(d1.notify, isTrue);
       expect(d1.reason, 'claim');
       final d2 = _decide(
-          errorOnly: true, kind: 'cycle_ok', isClaim: true,
-          nowMillis: 1000);
+          errorOnly: true, kind: 'cycle_ok', isClaim: true, nowMillis: 1000);
       expect(d2.notify, isTrue);
       expect(d2.reason, 'claim');
     });
 
     test('errors always pass (bypass errorOnly too)', () {
-      final d = _decide(errorOnly: true, kind: 'cycle_error',
-          nowMillis: 1000);
+      final d = _decide(errorOnly: true, kind: 'cycle_error', nowMillis: 1000);
       expect(d.notify, isTrue);
       expect(d.reason, 'error');
     });
@@ -346,8 +342,8 @@ void main() {
 
     test('cooldown keys are per kind + account', () {
       final last = {'alert|a1': 0};
-      final d = _decide(
-          kind: 'alert', accountId: 'a2', last: last, nowMillis: 1000);
+      final d =
+          _decide(kind: 'alert', accountId: 'a2', last: last, nowMillis: 1000);
       expect(d.notify, isTrue);
     });
 

@@ -178,22 +178,18 @@ class SettingsScreen extends StatelessWidget {
             children: [
               ListTile(
                 title: _t(t(context, 'settings.language')),
-                subtitle:
-                    _s(LocaleController.instance.lang.label),
+                subtitle: _s(LocaleController.instance.lang.label),
                 trailing: PopupMenuButton<AppLang>(
                   initialValue: LocaleController.instance.lang,
                   onSelected: (lang) async {
                     LocaleController.instance.set(lang);
-                    final prefs =
-                        await SharedPreferences.getInstance();
+                    final prefs = await SharedPreferences.getInstance();
                     await prefs.setString('settings.lang', lang.code);
                   },
                   itemBuilder: (ctx) => const [
+                    PopupMenuItem(value: AppLang.en, child: Text('English')),
                     PopupMenuItem(
-                        value: AppLang.en, child: Text('English')),
-                    PopupMenuItem(
-                        value: AppLang.id,
-                        child: Text('Bahasa Indonesia')),
+                        value: AppLang.id, child: Text('Bahasa Indonesia')),
                   ],
                 ),
               ),

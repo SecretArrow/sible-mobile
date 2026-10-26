@@ -26,8 +26,7 @@ class ProxyOverrideStore {
   static String enabledKey(String accountId) =>
       'proxy.override.enabled.$accountId';
 
-  static Future<SharedPreferences> _prefs() =>
-      SharedPreferences.getInstance();
+  static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
   /// Stored override URI for [accountId] (may be null / user-edited).
   static Future<String?> getOverride(String accountId) async =>

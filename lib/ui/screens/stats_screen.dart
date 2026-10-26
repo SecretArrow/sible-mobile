@@ -145,9 +145,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final filter = known.contains(_accountFilter) ? _accountFilter : null;
     final filtered = filter == null
         ? _records
-        : _records
-            .where((r) => r.accountId == filter)
-            .toList(growable: false);
+        : _records.where((r) => r.accountId == filter).toList(growable: false);
 
     final nowUtc = DateTime.now().toUtc();
     final todayStart = DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day);

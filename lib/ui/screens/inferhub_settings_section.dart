@@ -216,8 +216,7 @@ class _InferHubSettingsSectionState extends State<InferHubSettingsSection> {
               title: _t(t(context, 'inferhub.modeExtensionPicker')),
               subtitle: _s(t(context, 'inferhub.modeExtensionPickerHint')),
               value: _config.extensionPicker,
-              onChanged: (v) =>
-                  _persist(_config.copyWith(extensionPicker: v)),
+              onChanged: (v) => _persist(_config.copyWith(extensionPicker: v)),
             ),
             _advanced(),
             const SizedBox(height: 6),
@@ -308,8 +307,7 @@ class _InferHubSettingsSectionState extends State<InferHubSettingsSection> {
               label: _config.temperature.toStringAsFixed(1),
               onChanged: (v) =>
                   setState(() => _config = _config.copyWith(temperature: v)),
-              onChangeEnd: (v) =>
-                  _persist(_config.copyWith(temperature: v)),
+              onChangeEnd: (v) => _persist(_config.copyWith(temperature: v)),
             ),
           ),
         ),

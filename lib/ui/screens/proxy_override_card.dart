@@ -149,13 +149,12 @@ class _ProxyOverrideCardState extends State<ProxyOverrideCard> {
     return InputDecoration(
       isDense: true,
       hintText: t(context, 'proxy.uri'),
-      hintStyle: const TextStyle(
-          color: SibleTheme.textSecondary, fontSize: 11.5),
+      hintStyle:
+          const TextStyle(color: SibleTheme.textSecondary, fontSize: 11.5),
       errorText: invalid ? t(context, 'proxy.invalidUri') : null,
       filled: true,
       fillColor: SibleTheme.surfaceHigh,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       border: border(SibleTheme.border),
       enabledBorder: border(SibleTheme.border),
       focusedBorder: border(SibleTheme.primary, 1.2),
@@ -223,15 +222,12 @@ class _ProxyOverrideCardState extends State<ProxyOverrideCard> {
                   children: [
                     const Spacer(),
                     OutlinedButton.icon(
-                      onPressed: (_busy || !_enabled || invalid)
-                          ? null
-                          : _test,
+                      onPressed: (_busy || !_enabled || invalid) ? null : _test,
                       icon: _busy
                           ? const SizedBox(
                               width: 14,
                               height: 14,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.network_check, size: 16),
                       label: Text(

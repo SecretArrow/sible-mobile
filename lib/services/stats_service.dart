@@ -199,8 +199,8 @@ DailyTotal? bestDay(List<EarningRecord> records) {
 /// Mean earnings per day over the last [days] days (today included).
 double averagePerDay(List<EarningRecord> records, {required int days}) {
   if (days <= 0) return 0;
-  final total = aggregateDaily(records, days: days)
-      .fold(0.0, (sum, d) => sum + d.total);
+  final total =
+      aggregateDaily(records, days: days).fold(0.0, (sum, d) => sum + d.total);
   return total / days;
 }
 

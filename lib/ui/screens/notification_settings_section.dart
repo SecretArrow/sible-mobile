@@ -27,8 +27,7 @@ class SmartNotificationsSection extends StatefulWidget {
       _SmartNotificationsSectionState();
 }
 
-class _SmartNotificationsSectionState
-    extends State<SmartNotificationsSection> {
+class _SmartNotificationsSectionState extends State<SmartNotificationsSection> {
   NotifPolicy? _ownPolicy;
 
   NotifPolicy get _policy => widget.policy ?? _ownPolicy!;

@@ -150,9 +150,8 @@ Future<String> _getIp(HttpClient client, Duration timeout) async {
 /// Best-effort country lookup; returns null on any failure (spec: ignored).
 Future<String?> _getCountry(HttpClient client, String ip, Duration t) async {
   try {
-    final req = await client
-        .getUrl(Uri.parse('https://ipwho.is/$ip'))
-        .timeout(t);
+    final req =
+        await client.getUrl(Uri.parse('https://ipwho.is/$ip')).timeout(t);
     final res = await req.close().timeout(t);
     final body = await res.transform(utf8.decoder).join().timeout(t);
     if (res.statusCode != 200) return null;
