@@ -6,12 +6,31 @@ class SibleApi {
   /// (see bundle: `s = \`${n.apiUrl}/api/v1\``), so all request paths below
   /// are appended to this base.
   static const String baseUrl = 'https://prod.sible.network/api/v1';
-  static const String appVersion = '1.2.0';
-  static const int appBuild = 20;
+  static const String appVersion = '2.1.0';
+  static const int appBuild = 21;
 }
 
 class MailTm {
   static const String baseUrl = 'https://api.mail.tm';
+}
+
+/// InferHub LLM inference gateway (https://inferhub.dev/docs).
+///
+/// OpenAI-compatible surface used as the optional "AI brain" of the
+/// automation: reward-task solving, acceleration planning (20/40/60%)
+/// and extension (explorer app) picking.
+class InferHub {
+  /// OpenAI-compatible inference base (append `/chat/completions` etc).
+  static const String inferenceBaseUrl = 'https://api.inferhub.dev/v1';
+
+  /// Management API base (model catalog, account info).
+  static const String managementBaseUrl = 'https://inferhub.dev/api';
+
+  static const String docsUrl = 'https://inferhub.dev/docs';
+  static const Duration defaultTimeout = Duration(seconds: 60);
+
+  /// Models list page size used by the in-app picker.
+  static const int modelPageSize = 20;
 }
 
 class Limits {
