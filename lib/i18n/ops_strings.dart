@@ -46,9 +46,17 @@ const Map<String, Map<String, String>> opsStrings = {
     'en': 'Alerts only (errors & claims)',
     'id': 'Hanya peringatan (galat & klaim)',
   },
+  'notif.errorOnlyHint': {
+    'en': 'Skip per-cycle OK pings; errors, claims and alerts stay on.',
+    'id': 'Lewati ping OK tiap siklus; galat, klaim, dan peringatan tetap on.',
+  },
   'notif.summary': {
     'en': 'Daily summary',
     'id': 'Ringkasan harian',
+  },
+  'notif.summaryHint': {
+    'en': 'One aggregated notification per day instead of every cycle.',
+    'id': 'Satu notifikasi ringkasan per hari, bukan tiap siklus.',
   },
   'notif.grouped': {
     'en': '{n} accounts OK (grouped)',
