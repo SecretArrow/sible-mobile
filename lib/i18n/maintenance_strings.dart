@@ -8,8 +8,10 @@ const Map<String, Map<String, String>> maintenanceStrings = {
     'id': 'Cadangkan & pulihkan',
   },
   'backup.hint': {
-    'en': 'Export all accounts (encrypted) into a single .siblebak file, or restore from one.',
-    'id': 'Ekspor semua akun (terenkripsi) ke satu file .siblebak, atau pulihkan darinya.',
+    'en':
+        'Export all accounts (encrypted) into a single .siblebak file, or restore from one.',
+    'id':
+        'Ekspor semua akun (terenkripsi) ke satu file .siblebak, atau pulihkan darinya.',
   },
   'backup.export': {
     'en': 'Export encrypted backup',
@@ -50,6 +52,38 @@ const Map<String, Map<String, String>> maintenanceStrings = {
   'backup.failed': {
     'en': 'Backup failed: {e}',
     'id': 'Cadangan gagal: {e}',
+  },
+  'backup.confirmPassword': {
+    'en': 'Confirm password',
+    'id': 'Konfirmasi kata sandi',
+  },
+  'backup.passwordMismatch': {
+    'en': 'Passwords do not match',
+    'id': 'Kata sandi tidak sama',
+  },
+  'backup.passwordRequired': {
+    'en': 'Enter the backup password',
+    'id': 'Masukkan kata sandi cadangan',
+  },
+  'backup.exporting': {
+    'en': 'Encrypting & saving…',
+    'id': 'Mengenkripsi & menyimpan…',
+  },
+  'backup.restoring': {
+    'en': 'Restoring accounts…',
+    'id': 'Memulihkan akun…',
+  },
+  'backup.restoreConfirmTitle': {
+    'en': 'Restore this backup?',
+    'id': 'Pulihkan cadangan ini?',
+  },
+  'backup.restoreConfirmBody': {
+    'en': 'Accounts from the backup file will be added to this device. '
+        'Existing accounts with the same ID are skipped (duplicates are '
+        'never overwritten).',
+    'id': 'Akun dari file cadangan akan ditambahkan ke perangkat ini. '
+        'Akun yang sudah ada dengan ID sama akan dilewati (duplikat tidak '
+        'ditimpa).',
   },
   'update.title': {
     'en': 'App updates',
