@@ -6,7 +6,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sible_mobile/services/log_filter.dart';
 import 'package:sible_mobile/services/proxy_tester.dart';
-import 'package:sible_mobile/services/smart_notifications.dart' as notif;
+import 'package:sible_mobile/services/smart_notifications.dart';
 
 // ---------------------------------------------------------------------------
 // #6 Log filter + CSV
@@ -186,7 +186,7 @@ void main() {
 
   const min = 60000;
 
-  notif.NotificationDecision decide({
+  NotificationDecision runDecide({
     bool errorOnly = false,
     int cooldownMinutes = 30,
     required String kind,
@@ -196,7 +196,7 @@ void main() {
     Map<String, int>? last,
     required int nowMillis,
   }) =>
-      notif.decide(
+      decide(
         errorOnly: errorOnly,
         cooldownMinutes: cooldownMinutes,
         kind: kind,
@@ -209,21 +209,21 @@ void main() {
 
   group('decide (error-only)', () {
     test('blocks cycle_ok when errorOnly is on', () {
-      final d = decide(errorOnly: true, kind: 'cycle_ok', nowMillis: 1000);
+      final d = runDecide(errorOnly: true, kind: 'cycle_ok', nowMillis: 1000);
       expect(d.notify, isFalse);
       expect(d.reason, 'errorOnly');
     });
 
     test('allows cycle_ok when errorOnly is off and records the key', () {
       final last = <String, int>{};
-      final d = decide(
+      final d = runDecide(
         errorOnly: false,
         cooldownMinutes: 30,
         kind: 'cycle_ok',
         accountId: 'a1',
         isError: false,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 1000,
       );
       expect(d.notify, isTrue);
@@ -232,21 +232,22 @@ void main() {
     });
 
     test('claims pass even with errorOnly on', () {
-      final d1 = decide(
+      final d1 = runDecide(
           errorOnly: true,
           kind: 'claim',
           last: {'claim|a1': 1000},
           nowMillis: 1000 + 5 * min);
       expect(d1.notify, isTrue);
       expect(d1.reason, 'claim');
-      final d2 = decide(
+      final d2 = runDecide(
           errorOnly: true, kind: 'cycle_ok', isClaim: true, nowMillis: 1000);
       expect(d2.notify, isTrue);
       expect(d2.reason, 'claim');
     });
 
     test('errors always pass (bypass errorOnly too)', () {
-      final d = decide(errorOnly: true, kind: 'cycle_error', nowMillis: 1000);
+      final d =
+          runDecide(errorOnly: true, kind: 'cycle_error', nowMillis: 1000);
       expect(d.notify, isTrue);
       expect(d.reason, 'error');
     });
@@ -255,14 +256,14 @@ void main() {
   group('decide (cooldown)', () {
     test('blocks a repeat cycle_ok inside the window, keeps the map', () {
       final last = {'cycle_ok|a1': 1000};
-      final d = decide(
+      final d = runDecide(
         errorOnly: false,
         cooldownMinutes: 30,
         kind: 'cycle_ok',
         accountId: 'a1',
         isError: false,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 1000 + 30 * min - 1,
       );
       expect(d.notify, isFalse);
@@ -272,14 +273,14 @@ void main() {
 
     test('releases cycle_ok exactly at the window edge', () {
       final last = {'cycle_ok|a1': 1000};
-      final d = decide(
+      final d = runDecide(
         errorOnly: false,
         cooldownMinutes: 30,
         kind: 'cycle_ok',
         accountId: 'a1',
         isError: false,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 1000 + 30 * min,
       );
       expect(d.notify, isTrue);
@@ -288,24 +289,24 @@ void main() {
 
     test('errors bypass the cooldown and never touch the map', () {
       final last = {'cycle_error|a1': 1000};
-      final d1 = decide(
+      final d1 = runDecide(
         errorOnly: false,
         cooldownMinutes: 30,
         kind: 'cycle_error',
         accountId: 'a1',
         isError: true,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 1000 + min,
       );
-      final d2 = decide(
+      final d2 = runDecide(
         errorOnly: false,
         cooldownMinutes: 30,
         kind: 'cycle_error',
         accountId: 'a1',
         isError: true,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 1000 + 2 * min,
       );
       expect(d1.notify, isTrue);
@@ -315,14 +316,14 @@ void main() {
 
     test('claims ignore the cooldown window', () {
       final last = {'claim|a1': 1000};
-      final d = decide(
+      final d = runDecide(
         errorOnly: false,
         cooldownMinutes: 30,
         kind: 'claim',
         accountId: 'a1',
         isError: false,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 1000 + min,
       );
       expect(d.notify, isTrue);
@@ -331,9 +332,9 @@ void main() {
 
     test('alerts respect the per-key cooldown', () {
       final last = <String, int>{};
-      final a1 = decide(kind: 'alert', last: last, nowMillis: 0);
-      final a2 = decide(kind: 'alert', last: last, nowMillis: 10 * min);
-      final a3 = decide(kind: 'alert', last: last, nowMillis: 31 * min);
+      final a1 = runDecide(kind: 'alert', last: last, nowMillis: 0);
+      final a2 = runDecide(kind: 'alert', last: last, nowMillis: 10 * min);
+      final a3 = runDecide(kind: 'alert', last: last, nowMillis: 31 * min);
       expect(a1.notify, isTrue);
       expect(a2.notify, isFalse);
       expect(a2.reason, 'cooldown');
@@ -342,21 +343,21 @@ void main() {
 
     test('cooldown keys are per kind + account', () {
       final last = {'alert|a1': 0};
-      final d =
-          decide(kind: 'alert', accountId: 'a2', last: last, nowMillis: 1000);
+      final d = runDecide(
+          kind: 'alert', accountId: 'a2', last: last, nowMillis: 1000);
       expect(d.notify, isTrue);
     });
 
     test('cooldownMinutes <= 0 disables the cooldown', () {
       final last = {'cycle_ok|a1': 0};
-      final d = decide(
+      final d = runDecide(
         errorOnly: false,
         cooldownMinutes: 0,
         kind: 'cycle_ok',
         accountId: 'a1',
         isError: false,
         isClaim: false,
-        lastNotifyMillis: last,
+        last: last,
         nowMillis: 5,
       );
       expect(d.notify, isTrue);
@@ -364,7 +365,7 @@ void main() {
     });
 
     test('unknown kinds are blocked', () {
-      final d = decide(kind: 'weird', nowMillis: 0);
+      final d = runDecide(kind: 'weird', nowMillis: 0);
       expect(d.notify, isFalse);
       expect(d.reason, 'unknownKind');
     });

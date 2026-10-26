@@ -35,7 +35,7 @@ void main() {
     });
 
     test('after the grace period locks again', () {
-      final aBitLate = base.subtract(grace - const Duration(seconds: 1));
+      final aBitLate = base.subtract(grace + const Duration(seconds: 1));
       final hoursLater = base.subtract(const Duration(hours: 8));
       expect(shouldLock(true, aBitLate, now: base), isTrue);
       expect(shouldLock(true, hoursLater, now: base), isTrue);

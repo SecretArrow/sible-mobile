@@ -427,8 +427,10 @@ List<String> parseExtensionIdsFromLlm(String text, {int max = 3}) {
   }
   final out = <String>[];
   for (final e in decoded) {
-    final s = '$e'.trim();
-    if (s.isNotEmpty && !out.contains(s)) out.add(s);
+    if (e is! String) continue;
+    final s = e.trim();
+    if (s.isEmpty) continue;
+    if (!out.contains(s)) out.add(s);
     if (out.length >= max) break;
   }
   return out;
