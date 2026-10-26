@@ -6,7 +6,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sible_mobile/services/log_filter.dart';
 import 'package:sible_mobile/services/proxy_tester.dart';
-import 'package:sible_mobile/services/smart_notifications.dart';
+import 'package:sible_mobile/services/smart_notifications.dart' as notif;
 
 // ---------------------------------------------------------------------------
 // #6 Log filter + CSV
@@ -186,7 +186,7 @@ void main() {
 
   const min = 60000;
 
-  NotificationDecision decide({
+  notif.NotificationDecision decide({
     bool errorOnly = false,
     int cooldownMinutes = 30,
     required String kind,
@@ -196,7 +196,7 @@ void main() {
     Map<String, int>? last,
     required int nowMillis,
   }) =>
-      decide(
+      notif.decide(
         errorOnly: errorOnly,
         cooldownMinutes: cooldownMinutes,
         kind: kind,
