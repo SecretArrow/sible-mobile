@@ -1,37 +1,70 @@
-/// App root: MaterialApp + theme + navigation shell with 5 tabs.
+/// App root: MaterialApp + theme + navigation shell with 6 tabs.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'core/i18n.dart';
 import 'core/theme.dart';
 import 'services/account_manager.dart';
 import 'state/providers.dart';
 import 'ui/screens/accounts_screen.dart';
 import 'ui/screens/dashboard_screen.dart';
+import 'ui/screens/lock_screen.dart';
 import 'ui/screens/logs_screen.dart';
 import 'ui/screens/proxies_screen.dart';
 import 'ui/screens/settings_screen.dart';
+import 'ui/screens/stats_screen.dart';
 
-class SibleMinerApp extends StatelessWidget {
+class SibleMinerApp extends StatefulWidget {
   final AppDependencies deps;
 
   const SibleMinerApp({super.key, required this.deps});
 
   @override
+  State<SibleMinerApp> createState() => _SibleMinerAppState();
+}
+
+class _SibleMinerAppState extends State<SibleMinerApp> {
+  @override
+  void initState() {
+    super.initState();
+    // I18N: restore the persisted app language before first frame.
+    SharedPreferences.getInstance()
+        .then((p) => LocaleController.instance.loadFrom(
+              p.getString('settings.lang'),
+            ))
+        .catchError((_) {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<AppDependencies>.value(value: deps),
-        ChangeNotifierProvider<SettingsStore>.value(value: deps.settings),
+        Provider<AppDependencies>.value(value: widget.deps),
+        ChangeNotifierProvider<SettingsStore>.value(
+            value: widget.deps.settings),
         ChangeNotifierProvider<AccountManager>.value(
-            value: deps.accountManager),
+            value: widget.deps.accountManager),
       ],
-      child: MaterialApp(
-        title: 'Sible Miner',
-        debugShowCheckedModeBanner: false,
-        theme: SibleTheme.dark(),
-        home: const HomeShell(),
+      // I18N: rebuild MaterialApp when the user switches language.
+      child: ListenableBuilder(
+        listenable: LocaleController.instance,
+        builder: (context, _) => I18nScope(
+          lang: LocaleController.instance.lang,
+          child: MaterialApp(
+            title: 'Sible Miner',
+            debugShowCheckedModeBanner: false,
+            theme: SibleTheme.dark(),
+            // SECURITY: biometric lock gate wraps every route.
+            builder: (context, child) => LockGate(
+              child:
+                  child ?? const SizedBox.shrink(),
+            ),
+            home: const HomeShell(),
+          ),
+        ),
       ),
     );
   }
@@ -50,12 +83,13 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final mgr = context.watch<AccountManager>();
-    final pages = const [
-      DashboardScreen(),
-      AccountsScreen(),
-      ProxiesScreen(),
-      LogsScreen(),
-      SettingsScreen(),
+    final pages = <Widget>[
+      const DashboardScreen(),
+      const AccountsScreen(),
+      const StatsScreen(),
+      const ProxiesScreen(),
+      const LogsScreen(),
+      const SettingsScreen(),
     ];
 
     return Scaffold(
@@ -72,10 +106,10 @@ class _HomeShellState extends State<HomeShell> {
         onDestinationSelected: (i) => setState(() => _index = i),
         height: 68,
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.shield_moon_outlined),
-            selectedIcon: Icon(Icons.shield_moon),
-            label: 'Home',
+          NavigationDestination(
+            icon: const Icon(Icons.shield_moon_outlined),
+            selectedIcon: const Icon(Icons.shield_moon),
+            label: t(context, 'nav.dashboard'),
           ),
           NavigationDestination(
             icon: Badge(
@@ -85,22 +119,27 @@ class _HomeShellState extends State<HomeShell> {
               child: const Icon(Icons.group_outlined),
             ),
             selectedIcon: const Icon(Icons.group),
-            label: 'Accounts',
+            label: t(context, 'nav.accounts'),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.lan_outlined),
-            selectedIcon: Icon(Icons.lan),
-            label: 'Proxy',
+          NavigationDestination(
+            icon: const Icon(Icons.insights_outlined),
+            selectedIcon: const Icon(Icons.insights),
+            label: t(context, 'nav.stats'),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.bolt_outlined),
-            selectedIcon: Icon(Icons.bolt),
-            label: 'Activity',
+          NavigationDestination(
+            icon: const Icon(Icons.lan_outlined),
+            selectedIcon: const Icon(Icons.lan),
+            label: t(context, 'nav.proxies'),
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune),
-            label: 'Settings',
+          NavigationDestination(
+            icon: const Icon(Icons.bolt_outlined),
+            selectedIcon: const Icon(Icons.bolt),
+            label: t(context, 'nav.logs'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.tune_outlined),
+            selectedIcon: const Icon(Icons.tune),
+            label: t(context, 'nav.settings'),
           ),
         ],
       ),

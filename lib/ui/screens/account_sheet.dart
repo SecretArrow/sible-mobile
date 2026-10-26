@@ -10,6 +10,8 @@ import '../../core/utils.dart';
 import '../../services/account_manager.dart';
 import '../../state/providers.dart';
 import '../widgets/common.dart';
+// OPS: manual per-account proxy override card.
+import 'proxy_override_card.dart';
 
 // ---------------------------------------------------------------------------
 // Account detail
@@ -260,6 +262,10 @@ class _AccountDetailSheetState extends State<AccountDetailSheet> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+
+                // OPS: manual per-account proxy override + live test.
+                ProxyOverrideCard(accountId: acc.id),
                 const SizedBox(height: 16),
                 Row(
                   children: [

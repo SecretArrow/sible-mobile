@@ -8,6 +8,8 @@ import '../services/account_manager.dart';
 import '../services/account_store.dart';
 import '../services/notification_service.dart';
 import '../services/proxy_engine.dart';
+// STATS: earnings recorder for the statistics screen.
+import '../services/stats_service.dart';
 
 /// SharedPreferences-backed settings with change notifications for the UI.
 class SettingsStore extends ChangeNotifier {
@@ -103,6 +105,12 @@ class AppDependencies {
       proxyEngine: engine,
       notifications: NotificationService.instance,
     );
+    // STATS: attach the earnings recorder (UI isolate).
+    try {
+      final stats = StatsStore(rootDir: root);
+      await stats.init();
+      StatsRecorder.attach(stats);
+    } catch (_) {}
     return AppDependencies._(
       prefs: prefs,
       settings: settings,

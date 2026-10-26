@@ -19,6 +19,8 @@ import 'account_manager.dart';
 import 'account_store.dart';
 import 'notification_service.dart';
 import 'proxy_engine.dart';
+// STATS: earnings recorder in the service isolate.
+import 'stats_service.dart';
 
 const String serviceRunNowEvent = 'run_now';
 const String serviceStopEvent = 'stop_service';
@@ -154,6 +156,15 @@ Future<void> onServiceStart(ServiceInstance service) async {
   });
 
   await updateServiceNotification('Worker ready - first check starting...');
+  // STATS: attach the earnings recorder in the service isolate.
+  try {
+    final statsRoot = await resolveRootDir();
+    final stats = StatsStore(rootDir: statsRoot);
+    await stats.init();
+    StatsRecorder.attach(stats);
+  } catch (e) {
+    debugPrint('[service] stats attach failed: $e');
+  }
   // Main loop: sequential non-overlapping cycles with a fresh interval read.
   while (!stopping) {
     await runCycleNow();

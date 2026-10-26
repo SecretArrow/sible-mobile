@@ -15,7 +15,13 @@ import 'account_store.dart';
 import 'inferhub_brain.dart';
 import 'mailtm_service.dart';
 import 'mining_policy.dart';
+// OPS: smart-notification policy + manual per-account proxy override.
+import 'package:shared_preferences/shared_preferences.dart';
+import 'proxy_override_store.dart';
+import 'smart_notifications.dart';
 import 'notification_service.dart';
+// STATS: earnings recorder feeding the statistics screen.
+import 'stats_service.dart';
 import 'proxy_engine.dart';
 import 'sible_api.dart';
 
@@ -481,7 +487,10 @@ class AccountManager extends ChangeNotifier {
         a.status = AccountStatus.banned;
         a.lastError = 'Account banned';
         _logFor(a, LogLevel.error, 'auth', 'ACCOUNT BANNED');
-        if (notifyAlerts) {
+        // OPS: banned alerts always pass the smart-notification gate.
+        if (notifyAlerts &&
+            await _notifAllowed('alert', a.id,
+                isError: true, isClaim: false)) {
           await notifications.notifyAlert(
               title: 'Sible Miner - banned',
               body: '${a.displayName} has been banned.');
@@ -503,6 +512,9 @@ class AccountManager extends ChangeNotifier {
   }
 
   Future<ProxyEntry?> _ensureProxy(Account a) async {
+    // OPS: manual per-account override wins over the pool when valid.
+    final overridden = await _overrideProxy(a);
+    if (overridden != null) return overridden;
     if (proxyEngine.all.isNotEmpty && proxyEngine.aliveCount == 0) {
       await proxyEngine.refreshPool();
     }
@@ -513,6 +525,54 @@ class AccountManager extends ChangeNotifier {
       proxy = await proxyEngine.acquireFor(a.id);
     }
     return proxy;
+  }
+
+  /// OPS: manual proxy override configured in the account sheet.
+  /// Returns a direct [ProxyEntry] for the stored URI, or null when the
+  /// override is disabled/invalid (then the pool is used as usual).
+  Future<ProxyEntry?> _overrideProxy(Account a) async {
+    try {
+      final uri = await ProxyOverrideStore.effectiveOverride(a.id);
+      if (uri == null || uri.isEmpty) return null;
+      final hostPort = ProxyOverrideStore.hostPortOf(uri);
+      if (hostPort == null) return null;
+      final entry = ProxyEntry(host: hostPort.$1, port: hostPort.$2)
+        ..alive = true;
+      return entry;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // OPS: smart-notification gate (in-memory cooldown state per isolate).
+  static final Map<String, int> _notifLastMillis = <String, int>{};
+  NotifPolicy? _notifPolicy;
+
+  /// OPS: false when the smart-notification policy blocks [kind] for
+  /// [accountId]. Never throws; errors and claims always pass.
+  Future<bool> _notifAllowed(
+    String kind,
+    String accountId, {
+    required bool isError,
+    required bool isClaim,
+  }) async {
+    try {
+      _notifPolicy ??= NotifPolicy(await SharedPreferences.getInstance());
+      final policy = _notifPolicy!;
+      if (!policy.smartEnabled) return true;
+      return decide(
+        errorOnly: policy.errorOnly,
+        cooldownMinutes: policy.cooldownMinutes,
+        kind: kind,
+        accountId: accountId,
+        isError: isError,
+        isClaim: isClaim,
+        lastNotifyMillis: _notifLastMillis,
+        nowMillis: DateTime.now().millisecondsSinceEpoch,
+      ).notify;
+    } catch (_) {
+      return true;
+    }
   }
 
   Future<void> _handleAuthError(Account a, SibleApiException e,
@@ -681,6 +741,14 @@ class AccountManager extends ChangeNotifier {
         a.claimsToday++;
         _logFor(a, LogLevel.success, 'mining',
             'Claimed ${amount?.toStringAsFixed(4) ?? ''} SIBLE'.trim());
+        // STATS: record earning for the statistics screen (never throws).
+        try {
+          await StatsRecorder.recordClaim(
+            accountId: a.id,
+            sessionId: outcome.sessionId,
+            amount: amount ?? 0,
+          );
+        } catch (_) {}
       } else {
         _logFor(a, LogLevel.info, 'mining', 'Claim still pending');
       }
@@ -854,12 +922,17 @@ class AccountManager extends ChangeNotifier {
     notifyListeners();
 
     if (notifySummary && summary.accountsRun > 0) {
-      await notifications.notify(
-        title: 'Sible Miner - cycle done',
-        body: '${summary.headline} · ${summary.accountsRun} accounts',
-        channel: Channels.events,
-        silent: true,
-      );
+      // OPS: smart gate — cycle_ok is suppressed in error-only mode.
+      final allowed = await _notifAllowed('cycle_ok', 'global',
+          isError: false, isClaim: summary.claims > 0);
+      if (allowed) {
+        await notifications.notify(
+          title: 'Sible Miner - cycle done',
+          body: '${summary.headline} · ${summary.accountsRun} accounts',
+          channel: Channels.events,
+          silent: true,
+        );
+      }
     }
     return summary;
   }

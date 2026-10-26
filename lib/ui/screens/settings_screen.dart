@@ -4,8 +4,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
+import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../services/background_service.dart';
 import '../../services/notification_service.dart';
@@ -13,6 +15,12 @@ import '../../state/providers.dart';
 
 // INFERHUB: AI brain settings card (optional InferHub integration).
 import 'inferhub_settings_section.dart';
+// MAINTENANCE: encrypted backup/restore + update checker.
+import 'maintenance_settings_section.dart';
+// SECURITY: app lock + keep-alive (anti-kill).
+import 'security_settings_section.dart';
+// OPS: smart notifications (error-only, grouping, cooldown).
+import 'notification_settings_section.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -159,6 +167,38 @@ class SettingsScreen extends StatelessWidget {
           ),
           // INFERHUB: AI brain settings card (optional InferHub integration).
           const InferHubSettingsSection(),
+          // MAINTENANCE: encrypted backup/restore + update checker.
+          const MaintenanceSettingsSection(),
+          // SECURITY: biometric app lock + keep-alive hardening.
+          const SecuritySettingsSection(),
+          // OPS: smart notification policy.
+          const SmartNotificationsSection(),
+          _Group(
+            title: t(context, 'common.language'),
+            children: [
+              ListTile(
+                title: _t(t(context, 'settings.language')),
+                subtitle:
+                    _s(LocaleController.instance.lang.label),
+                trailing: PopupMenuButton<AppLang>(
+                  initialValue: LocaleController.instance.lang,
+                  onSelected: (lang) async {
+                    LocaleController.instance.set(lang);
+                    final prefs =
+                        await SharedPreferences.getInstance();
+                    await prefs.setString('settings.lang', lang.code);
+                  },
+                  itemBuilder: (ctx) => const [
+                    PopupMenuItem(
+                        value: AppLang.en, child: Text('English')),
+                    PopupMenuItem(
+                        value: AppLang.id,
+                        child: Text('Bahasa Indonesia')),
+                  ],
+                ),
+              ),
+            ],
+          ),
           _Group(
             title: 'Account factory',
             children: [
@@ -230,8 +270,9 @@ class SettingsScreen extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.all(20),
             child: Text(
-              'Sible Miner v2.0.0 · data is stored locally and isolated per account · '
-              'use responsibly and respect Sible Network terms.',
+              'Sible Miner v${SibleApi.appVersion} · data is stored locally and '
+              'isolated per account · use responsibly and respect '
+              'Sible Network terms.',
               style: TextStyle(
                   color: SibleTheme.textSecondary, fontSize: 11, height: 1.5),
             ),

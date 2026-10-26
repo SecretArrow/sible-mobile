@@ -1,72 +1,13 @@
 /// Per-account manual proxy override (#8): prefs store + settings card.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/i18n.dart';
 import '../../core/theme.dart';
+import '../../services/proxy_override_store.dart';
 import '../../services/proxy_tester.dart';
 import '../widgets/common.dart';
-
-/// SharedPreferences-backed per-account proxy override.
-///
-/// Storage contract (the main agent wires this into `AccountManager`):
-/// * `proxy.override.<accountId>` — normalized proxy URI
-///   (`user:pass@host:port`, scheme stripped), absent when unset.
-/// * `proxy.override.enabled.<accountId>` — bool switch state.
-/// * An override is *effective* only when enabled == true AND the stored URI
-///   passes [isValidProxyUri]; otherwise the account falls back to the
-///   proxy pool (see [effectiveOverride]).
-class ProxyOverrideStore {
-  ProxyOverrideStore._();
-
-  /// Exact pref key holding the override URI for [accountId].
-  static String uriKey(String accountId) => 'proxy.override.$accountId';
-
-  /// Exact pref key holding the enabled flag for [accountId].
-  static String enabledKey(String accountId) =>
-      'proxy.override.enabled.$accountId';
-
-  static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
-
-  /// Stored override URI for [accountId] (may be null / user-edited).
-  static Future<String?> getOverride(String accountId) async =>
-      (await _prefs()).getString(uriKey(accountId));
-
-  /// Whether the manual-proxy switch is on for [accountId].
-  static Future<bool> isEnabled(String accountId) async =>
-      (await _prefs()).getBool(enabledKey(accountId)) ?? false;
-
-  /// Persists both keys for [accountId]; a null/empty [uri] is removed so
-  /// stale values never linger after the field is cleared.
-  static Future<void> set(
-    String accountId, {
-    required bool enabled,
-    String? uri,
-  }) async {
-    final prefs = await _prefs();
-    if (uri == null || uri.isEmpty) {
-      await prefs.remove(uriKey(accountId));
-    } else {
-      await prefs.setString(uriKey(accountId), uri);
-    }
-    await prefs.setBool(enabledKey(accountId), enabled);
-  }
-
-  /// Resolves the *effective* override for [accountId]: the normalized URI
-  /// when the switch is on and the stored URI is valid, otherwise null
-  /// (meaning: use the proxy pool as usual).
-  static Future<String?> effectiveOverride(String accountId) async {
-    final prefs = await _prefs();
-    if (!(prefs.getBool(enabledKey(accountId)) ?? false)) return null;
-    final uri = prefs.getString(uriKey(accountId));
-    if (uri == null || !isValidProxyUri(uri)) return null;
-    return uri;
-  }
-}
 
 /// Card for the account detail sheet: "use manual proxy" switch, validated
 /// URI field with implicit save, and a live proxy test button that reports

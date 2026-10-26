@@ -1,13 +1,16 @@
-/// Global activity feed with filters.
+/// Global activity feed with search, level/account filters and CSV export.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../services/account_manager.dart';
+import '../../services/log_filter.dart';
 import '../widgets/common.dart';
+import 'logs_controls.dart';
 
 class LogsScreen extends StatefulWidget {
   const LogsScreen({super.key});
@@ -17,70 +20,94 @@ class LogsScreen extends StatefulWidget {
 }
 
 class _LogsScreenState extends State<LogsScreen> {
-  String _filter = 'all';
+  final LogsFilterState _filter = LogsFilterState();
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final mgr = context.watch<AccountManager>();
     final all = mgr.liveLog;
-    final accounts =
-        all.map((e) => e.accountLabel).where((l) => l.isNotEmpty).toSet();
-    final filtered = all.where((e) {
-      if (_filter == 'all') return true;
-      if (_filter == 'errors') {
-        return e.level == LogLevel.error || e.level == LogLevel.warn;
-      }
-      return e.accountLabel == _filter;
-    }).toList()
+    final accounts = all
+        .map((e) => e.accountLabel)
+        .where((l) => l.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    // OPS: unified text/level/account filtering.
+    final filtered = applyLogFilter<LogEvent>(
+      all,
+      _filter,
+      account: (e) => e.accountLabel.isEmpty ? null : e.accountLabel,
+      level: (e) => e.level.name,
+      message: (e) => e.message,
+    ).toList()
       ..sort((a, b) => b.ts.compareTo(a.ts));
 
     return SafeArea(
       child: Column(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 18, 20, 0),
-            child: SizedBox(
-              width: double.infinity,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 12, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    t(context, 'nav.logs'),
+                    style: const TextStyle(
+                      color: SibleTheme.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+                // OPS: export the filtered feed as CSV.
+                LogsCsvAction(
+                  collectRows: () => filtered
+                      .map((e) => LogRow(
+                            at: e.ts.toIso8601String(),
+                            account: e.accountLabel,
+                            level: e.level.name,
+                            message: e.message,
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+          // OPS: search + level chips + account picker.
+          ListenableBuilder(
+            listenable: _filter,
+            builder: (context, _) => LogsFilterBar(
+              state: _filter,
+              accountOptions: accounts,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Align(
+              alignment: Alignment.centerLeft,
               child: Text(
-                'Activity',
-                style: TextStyle(
-                  color: SibleTheme.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+                t(context, 'logs.results')
+                    .replaceAll('{n}', '${filtered.length}'),
+                style: const TextStyle(
+                  color: SibleTheme.textSecondary,
+                  fontSize: 10.5,
                 ),
               ),
             ),
           ),
-          SizedBox(
-            height: 46,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                _FilterChip(
-                    label: 'All',
-                    selected: _filter == 'all',
-                    onTap: () => setState(() => _filter = 'all')),
-                _FilterChip(
-                    label: 'Errors',
-                    selected: _filter == 'errors',
-                    onTap: () => setState(() => _filter = 'errors')),
-                ...accounts.map((a) => _FilterChip(
-                      label: a,
-                      selected: _filter == a,
-                      onTap: () => setState(() => _filter = a),
-                    )),
-              ],
-            ),
-          ),
           Expanded(
             child: filtered.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.bolt_outlined,
-                    title: 'Nothing here yet',
-                    subtitle:
-                        'Cycles, claims, accelerations and proxy rotations will appear here as they happen.',
+                    title: t(context, 'common.empty'),
+                    subtitle: t(context, 'logs.filterText'),
                   )
                 : RefreshIndicator(
                     color: SibleTheme.primary,
@@ -94,46 +121,6 @@ class _LogsScreenState extends State<LogsScreen> {
                   ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterChip(
-      {required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected
-                ? SibleTheme.primary.withValues(alpha: 0.3)
-                : SibleTheme.surface,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? SibleTheme.primary : SibleTheme.border,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color:
-                  selected ? SibleTheme.textPrimary : SibleTheme.textSecondary,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
       ),
     );
   }
