@@ -335,7 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         // Also clear in-memory state so the wipe is real even
                         // before restart (accounts, logs, counters).
                         deps.accountManager.accounts.clear();
-                        deps.accountManager.notifyListeners();
+                        deps.accountManager.refreshUi();
                       }, label: 'Wipe');
                       if (wiped) {
                         _toast('All data wiped. Restart the app.');

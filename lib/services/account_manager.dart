@@ -95,6 +95,10 @@ class AccountManager extends ChangeNotifier {
 
   List<LogEvent> get liveLog => List.unmodifiable(_liveLog);
 
+  /// Public UI refresh hook (`notifyListeners` is protected) - lets the UI
+  /// surface service-driven state changes (nextCycleAt, lastCycleAt).
+  void refreshUi() => notifyListeners();
+
   List<Account> get activeAccounts => accounts
       .where((a) => a.enabled && a.status != AccountStatus.banned)
       .toList();

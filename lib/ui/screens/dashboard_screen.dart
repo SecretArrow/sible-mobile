@@ -22,7 +22,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  StreamSubscription<Map<String, dynamic>>? _cycleDoneSub;
+  StreamSubscription<Map<String, dynamic>?>? _cycleDoneSub;
 
   @override
   void initState() {
@@ -33,14 +33,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final service = FlutterBackgroundService();
     _cycleDoneSub = service.on(serviceCycleDoneEvent).listen((data) {
       final mgr = deps.accountManager;
-      final nextRaw = data['nextCycleAt'];
+      final payload = data ?? const <String, dynamic>{};
+      final nextRaw = payload['nextCycleAt'];
       final next = nextRaw is String ? DateTime.tryParse(nextRaw) : null;
-      final error = data['error'];
+      final error = payload['error'];
       final hasError = error != null && '$error'.isNotEmpty;
       if (next != null) {
         mgr.nextCycleAt = next;
       }
-      if (data['accountsRun'] is num) {
+      if (payload['accountsRun'] is num) {
         // Synthetic event so background activity is visible on the dashboard.
         mgr.log(LogEvent(
           ts: DateTime.now(),
@@ -48,15 +49,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           category: 'cycle',
           message: hasError
               ? 'Background cycle error: $error'
-              : 'Background cycle done: ${data['success'] ?? 0} ok · '
-                  '${data['failed'] ?? 0} failed · '
-                  '${data['claims'] ?? 0} claims · '
-                  '+${data['accelerations'] ?? 0} accel · '
-                  '${data['extensionOpens'] ?? 0} ext',
+              : 'Background cycle done: ${payload['success'] ?? 0} ok · '
+                  '${payload['failed'] ?? 0} failed · '
+                  '${payload['claims'] ?? 0} claims · '
+                  '+${payload['accelerations'] ?? 0} accel · '
+                  '${payload['extensionOpens'] ?? 0} ext',
         ));
         mgr.lastCycleAt = DateTime.now();
       }
-      mgr.notifyListeners();
+      mgr.refreshUi();
     });
   }
 

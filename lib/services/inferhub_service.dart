@@ -16,7 +16,7 @@ import '../models/inferhub_models.dart';
 /// Error raised by every InferHub call, with a stable machine-readable
 /// [code] (TIMEOUT, UNAUTHORIZED, CAPACITY_SATURATED,
 /// NO_PROVIDER_UNDER_BID, NO_API_KEY, NO_MODEL, BAD_RESPONSE,
-/// NETWORK_ERROR, HTTP_ERROR, HTTP_<status>).
+/// NETWORK_ERROR, HTTP_ERROR, `HTTP_<status>`).
 class InferHubException implements Exception {
   /// Stable machine-readable error code (see the class doc for the list).
   final String code;
