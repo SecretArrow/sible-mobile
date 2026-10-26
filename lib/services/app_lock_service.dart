@@ -78,9 +78,6 @@ class AppLockService {
     try {
       final ok = await _auth.authenticate(
         localizedReason: localizedReason,
-        biometricOnly: false,
-        stickyAuth: true,
-        useErrorDialogs: true,
       );
       return LockResult(ok: ok, errorCode: ok ? null : 'failed');
     } on PlatformException catch (e) {

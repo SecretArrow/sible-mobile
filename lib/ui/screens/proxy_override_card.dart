@@ -1,6 +1,8 @@
 /// Per-account manual proxy override (#8): prefs store + settings card.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/i18n.dart';

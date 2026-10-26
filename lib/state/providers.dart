@@ -107,7 +107,7 @@ class AppDependencies {
     );
     // STATS: attach the earnings recorder (UI isolate).
     try {
-      final stats = StatsStore(rootDir: root);
+      final stats = StatsStore(rootDir: rootDir);
       await stats.init();
       StatsRecorder.attach(stats);
     } catch (_) {}

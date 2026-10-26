@@ -170,7 +170,6 @@ class InferHubService implements InferHubGateway {
   /// POST /v1/chat/completions (OpenAI shape). Sends the bid-cap headers
   /// only when the configured price caps are > 0, and retries exactly once
   /// on 429 when `Retry-After` is <= 5s. Throws [InferHubException].
-  @override
   Future<String> chat({
     required List<Map<String, String>> messages,
     String? model,
